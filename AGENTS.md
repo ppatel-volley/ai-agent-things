@@ -2,6 +2,8 @@
 
 > **Template**: This is a reusable framework for configuring AI coding agents.
 > Customize `AGENTS-PROJECT.md` for your project and swap `AGENTS-REACT-TS.md` for your tech stack.
+>
+> Informed by ["Large Language Model Reasoning Failures"](https://arxiv.org/abs/2602.06176) (Song, Han, Goodman — ICML 2025) and practical experience using Claude and Claude Code in production engineering workflows.
 
 <critical-requirements>
   <requirement priority="1">Read the first 3 sections completely — they contain MANDATORY requirements</requirement>
@@ -321,6 +323,57 @@ When complexity triggers apply, follow this process:
   <indicator>Clarifying questions come before implementation rather than after mistakes</indicator>
 </success-indicators>
 
+### 8.5 Session & Context Hygiene
+
+**Fresh context for fresh problems. Tight scope per request.**
+
+<behavioral-rules section="session-hygiene">
+  <rule id="fresh-conversations">Start fresh conversations for new topics. Earlier context in a long conversation degrades processing of newer information (proactive interference).</rule>
+  <rule id="tight-scope">Keep task scope tight — one logical change per request. "Update the GameLift config" is better than "update the config, fix the cost calculator, and update tests" in a single prompt.</rule>
+  <rule id="trim-context">Trim context ruthlessly. Including irrelevant files, full documents, or unnecessary background noise degrades reasoning quality. Provide only what you need for the current task.</rule>
+  <rule id="curated-reference">A focused 200-line excerpt beats a 5000-line file paste. Filter before including context.</rule>
+</behavioral-rules>
+
+### 8.6 Problem Framing Awareness
+
+**How a problem is framed changes how you reason about it. Guard against this.**
+
+<behavioral-rules section="problem-framing">
+  <rule id="lead-with-problem">Lead with the problem, not a preferred solution. If the user anchors on "I think we should use approach X," evaluate the constraints and goals independently before assessing X. Anchoring bias means the first information disproportionately shapes reasoning.</rule>
+  <rule id="framing-sensitivity">Be aware of framing effects. Logically equivalent prompts phrased differently can produce different results. If your output feels off, restructure your approach before assuming the task is unsolvable.</rule>
+  <rule id="bidirectional-relationships">State relationships bidirectionally. Due to the reversal curse, knowing "Team A owns Service X" doesn't guarantee reliably answering "who owns Service X?" in complex context. State important mappings from both directions when they matter.</rule>
+</behavioral-rules>
+
+### 8.7 Never Trust Arithmetic or Counting
+
+**Pattern-matching is not arithmetic. Always compute, never reason about numbers.**
+
+<behavioral-rules section="arithmetic-distrust">
+  <rule id="code-for-maths">Write code to compute, don't do mental arithmetic. For cost calculations, capacity planning, or any quantitative analysis, produce a script or formula — then run it.</rule>
+  <rule id="verify-numbers">Verify numerical outputs independently. Spot-check totals, unit conversions, and aggregations. Errors in middle digits and large-number multiplication are well-documented failure modes.</rule>
+  <rule id="high-risk-maths">Be especially cautious with: cost estimates, pricing calculations, date/time arithmetic, and counting over lists.</rule>
+</behavioral-rules>
+
+### 8.8 Confirmation Bias
+
+**Agreement is not validation. Actively seek counterarguments.**
+
+<behavioral-rules section="confirmation-bias">
+  <rule id="data-before-assessment">When analysing data (performance, incidents, evaluations), examine the raw data before forming conclusions. Don't anchor on the user's framing.</rule>
+  <rule id="request-counterarguments">For important decisions, argue the opposing position. "What would go wrong with this approach?" is a simple and effective stress test.</rule>
+  <rule id="agreement-not-validation">Don't treat agreement as validation. You are biased toward confirming the framing presented. Independent verification requires actively challenging assumptions.</rule>
+</behavioral-rules>
+
+### 8.9 Robustness & Consistency
+
+**When outputs are inconsistent, restructure — don't just retry.**
+
+<behavioral-rules section="robustness">
+  <rule id="restructure-not-retry">If you get inconsistent or poor outputs, restructure the approach — don't just retry the same thing. Minor changes to framing can cause dramatically different results.</rule>
+  <rule id="review-logic">For critical code generation, review the logic, not just whether it runs. Code can pass tests but contain subtle reasoning errors, especially in edge cases and boundary conditions.</rule>
+  <rule id="pin-context">Pin important context in CLAUDE.md, project docs, and structured context files so you have a consistent baseline rather than relying on conversational memory.</rule>
+</behavioral-rules>
+
 ---
 
 ## 9. Workflow Orchestration
@@ -352,6 +405,12 @@ When complexity triggers apply, follow this process:
     <rule id="elegant-solution">If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"</rule>
     <rule id="skip-for-simple">Skip this for simple, obvious fixes — don't over-engineer</rule>
     <rule id="self-challenge">Challenge your own work before presenting it</rule>
+  </rule-group>
+
+  <rule-group name="multi-agent-coordination">
+    <rule id="no-auto-merge">Don't let agents auto-merge work. If running multiple sessions in parallel, treat their outputs like PRs from junior developers — review, test, and merge deliberately.</rule>
+    <rule id="expect-coordination-failures">Expect coordination failures. Agents working in parallel have no shared state or Theory of Mind. Conflicts, redundant work, and inconsistent approaches are the default without human orchestration.</rule>
+    <rule id="verification-checkpoints">Add explicit verification checkpoints. Any multi-agent workflow needs human review gates between stages to prevent error cascading.</rule>
   </rule-group>
 </workflow-rules>
 
@@ -438,6 +497,18 @@ When complexity triggers apply, follow this process:
 - Confidence: [X.X]
 ```
 </verification-template>
+
+## Known LLM Failure Modes
+
+| Failure Mode | Risk Level | Mitigation |
+|---|---|---|
+| Working memory overload | High in long sessions | Fresh conversations per topic (§8.5) |
+| Anchoring / confirmation bias | High for decisions | Lead with problem, request counterarguments (§8.6, §8.8) |
+| Compositional reasoning | High for multi-step tasks | Decompose into sequential steps (§2, §6) |
+| Arithmetic errors | High for calculations | Always use code, never mental maths (§8.7) |
+| Framing sensitivity | Medium | Restructure prompt if output is off (§8.6) |
+| Reversal curse | Medium in complex context | State relationships bidirectionally (§8.6) |
+| Multi-agent coordination | High if parallelising | Human review gates, no auto-merge (§9) |
 
 ---
 
