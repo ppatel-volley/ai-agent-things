@@ -1,45 +1,9 @@
 # React/TypeScript Agent Guidelines
 
-> This file supplements the main `AGENTS.md` with React, TypeScript, and JavaScript-specific patterns.
+> Supplements `AGENTS.md` with React, TypeScript, and JavaScript-specific patterns.
 >
-> **Template**: Customize or replace sections below to match your project's tech stack.
-> For non-React projects, create an equivalent file (e.g., `AGENTS-PYTHON.md`, `AGENTS-CSHARP.md`).
-
----
-
-## Project Configuration
-
-### Test Commands
-
-```bash
-# Run all tests once
-pnpm test -- --run
-
-# Run specific package tests (monorepo)
-pnpm --filter @yourproject/shared test
-pnpm --filter @yourproject/server test
-
-# Alternative commands
-npm test
-yarn test
-```
-
-### Build Commands
-
-```bash
-# Type checking
-pnpm typecheck
-# or
-npx tsc --noEmit
-
-# Production build
-pnpm build
-# or
-npm run build
-
-# Development mode
-pnpm dev
-```
+> **Template**: Customize or replace for your stack (e.g., `AGENTS-PYTHON.md`, `AGENTS-CSHARP.md`).
+> For project-specific commands (test, build, dev), see `AGENTS-PROJECT.md`.
 
 ---
 
@@ -339,58 +303,37 @@ function useMyContext() {
 
 ### Shader Development
 
-When writing or modifying shader code (`.glsl` files or shader strings in `.ts`/`.tsx`):
-
 #### Required Practices
 
-<shader-rules>
-  <rule id="reference" severity="required">
-    Follow your project's shader documentation or established patterns
-  </rule>
-  <rule id="precision" severity="required">
-    All fragment shaders must declare `precision highp float;`
-  </rule>
-  <rule id="no-conditionals" severity="preferred">
-    Use mix(), step(), smoothstep() instead of if/else where possible
-  </rule>
-  <rule id="varyings" severity="required">
-    Varyings must be declared identically in vertex and fragment shaders
-  </rule>
-  <rule id="texture-functions" severity="required">
-    Use texture2D() for GLSL 1.0 (default), texture() for GLSL 3.0
-  </rule>
-  <rule id="uniforms" severity="required">
-    Use float instead of int for all uniforms (WebGL ES compatibility)
-  </rule>
-</shader-rules>
+- All fragment shaders must declare `precision highp float;`
+- Use `mix()`, `step()`, `smoothstep()` instead of `if/else` where possible
+- Varyings must be declared identically in vertex and fragment shaders
+- Use `texture2D()` for GLSL 1.0 (default), `texture()` for GLSL 3.0
+- Use `float` instead of `int` for all uniforms (WebGL ES compatibility)
 
 #### Performance Guidelines
 
-<shader-performance>
-  <pattern name="branching" preferred="mix(a, b, step(0.5, x))" avoid="if (x > 0.5) { ... }" />
-  <pattern name="clamping" preferred="clamp(x, 0.0, 1.0)" avoid="max(0.0, min(1.0, x))" />
-  <pattern name="conditionals" preferred="max(x - threshold, 0.0)" avoid="if (x > threshold) { x - threshold }" />
-  <pattern name="noise-octaves" preferred="LOD-based count" avoid="Fixed high count (7+)" />
-</shader-performance>
+| Pattern | Preferred | Avoid |
+|---------|-----------|-------|
+| Branching | `mix(a, b, step(0.5, x))` | `if (x > 0.5) { ... }` |
+| Clamping | `clamp(x, 0.0, 1.0)` | `max(0.0, min(1.0, x))` |
+| Conditionals | `max(x - threshold, 0.0)` | `if (x > threshold) { x - threshold }` |
+| Noise octaves | LOD-based count | Fixed high count (7+) |
 
-#### Common Mistakes to Avoid
+#### Common Mistakes
 
-<shader-mistakes>
-  <mistake id="unused-calculations">Don't compute values you never use (e.g., luminance for tone mapping)</mistake>
-  <mistake id="duplicate-code">Extract shared functions (noise, hash) to reusable strings</mistake>
-  <mistake id="magic-numbers">Consider exposing tuning values as uniforms</mistake>
-  <mistake id="integer-uniforms">Use float instead of int for WebGL ES compatibility</mistake>
-</shader-mistakes>
+- Don't compute values you never use (e.g., luminance for tone mapping)
+- Extract shared functions (noise, hash) to reusable strings
+- Consider exposing tuning values as uniforms
+- Use `float` instead of `int` for WebGL ES compatibility
 
 #### Shader Checklist
 
-<shader-checklist>
-  <item>Precision declared in fragment shaders</item>
-  <item>No unused variables or calculations</item>
-  <item>Varyings match between vertex/fragment</item>
-  <item>Conditionals minimized or justified</item>
-  <item>Tested visually in browser</item>
-</shader-checklist>
+- [ ] Precision declared in fragment shaders
+- [ ] No unused variables or calculations
+- [ ] Varyings match between vertex/fragment
+- [ ] Conditionals minimized or justified
+- [ ] Tested visually in browser
 
 ### React Three Fiber Patterns
 
@@ -531,33 +474,4 @@ const value = 'immutable'
 function parse(input: unknown): Data {
     // validate and narrow type
 }
-```
-
----
-
-## Package Manager Commands (pnpm/npm/yarn)
-
-```bash
-# Install dependencies
-pnpm install
-npm install
-yarn
-
-# Add dependency
-pnpm add package-name
-npm install package-name
-yarn add package-name
-
-# Add dev dependency
-pnpm add -D package-name
-npm install --save-dev package-name
-yarn add -D package-name
-
-# Run script
-pnpm run script-name
-npm run script-name
-yarn script-name
-
-# Monorepo filter (pnpm)
-pnpm --filter @scope/package-name command
 ```
