@@ -57,9 +57,9 @@ Import project and language-specific guidelines as needed:
 ---
 **Verification**
 - Learnings checked: [LIST or "None applicable - reason"]
-- Tests: [PASSED/FAILED] ([X] tests)
-- Types: [PASSED/NOT RUN]
-- Build: [PASSED/NOT RUN]
+- Tests: [PASSED/FAILED] ([X] tests) — `pnpm test -- --run`
+- Types: [PASSED/FAILED] — `pnpm typecheck` (**MANDATORY** — vitest does NOT check types)
+- Build: [PASSED/FAILED] — `pnpm build` (**MANDATORY** — must produce shippable artifact)
 - New tests added: [YES - describe / NO - justify]
 - Confidence: [0.0-1.0] [brief reason if below 0.9]
 ```
@@ -166,10 +166,10 @@ Don't just test that your function returns the right value — test that it corr
 
 **Before saying "done", verify ALL items:**
 
-- [ ] Tests pass
+- [ ] Tests pass (`pnpm test -- --run`)
 - [ ] New tests added for new code (or justified why not)
-- [ ] Type check passes (if applicable)
-- [ ] Build succeeds
+- [ ] **Type check passes** (`pnpm typecheck`) — **HARD GATE: tests passing alone is NOT sufficient. Vitest strips types and will not catch type errors.**
+- [ ] **Build succeeds** (`pnpm build`) — **HARD GATE: if the build fails, the code is not shippable regardless of test results.**
 - [ ] Verification Block included in response
 - [ ] Prove it works — never mark complete without demonstration
 - [ ] Diff behavior between main and your changes (when relevant)
@@ -521,6 +521,27 @@ git worktree add ../project-tests feature/tests
 - Don't let agents auto-merge work. Treat parallel agent outputs like PRs from junior developers — review, test, merge deliberately.
 - Expect coordination failures. Agents in parallel have no shared state. Conflicts and redundant work are the default without human orchestration.
 - Add explicit verification checkpoints between stages.
+
+### Multi-Agent Integration Verification (MANDATORY)
+
+**After merging output from parallel agents, the lead agent MUST run the full verification gate — not just tests.**
+
+Vitest (and similar test runners) strip TypeScript types at transform time and do NOT enforce type correctness. **1,000 passing tests with a broken build is not a passing codebase.**
+
+**Post-merge verification sequence (all must pass):**
+```bash
+pnpm typecheck    # TypeScript strict checking — catches type mismatches
+pnpm build        # Production build — catches import/export issues
+pnpm test -- --run  # Runtime behaviour — catches logic errors
+```
+
+**Common multi-agent type failures:**
+- Agent A adds a required field to a shared type; Agent B's test fixtures don't include it
+- Agent A changes hook generics; Agent B's components still cast to the old types
+- Agent A renames a type field; Agent B uses the old name in new code
+- Worktree isolation means each agent's code typechecks in isolation but fails when merged
+
+**Each agent's prompt MUST include all three verification commands**, not just `vitest run`. The lead agent must also re-run all three after merging.
 
 ### File Edit Conflicts (Exponential Backoff — Fallback)
 
