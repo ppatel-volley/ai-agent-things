@@ -18,6 +18,9 @@ A comprehensive guide for developers and AI agents building TV games on the Voll
 5. **VGF state starts as `{}`.** Always guard with `"phase" in state` before rendering (Section 4).
 6. **Always override Socket.IO transports.** Default is websocket-only; set `transports: ["polling", "websocket"]` (Section 4).
 7. **Reference implementation is at `emoji-multiplatform`** (same parent directory). When unsure about a pattern, check the reference code.
+8. **VWR device testing requires human-owned credentials.** The `@volley/vwr-s3-cli` needs an active AWS SSO session (TVDevelopers role) that only the human can create. **Never attempt `aws sso login` or `aws configure sso` yourself.** Instead, check whether the human already has an active session by running `aws sts get-caller-identity --profile <profile>`. If that fails, tell the human to follow the credential setup steps in Section 11. Once the session is active, you *can* run CLI commands like `npx @volley/vwr-s3-cli setup ...` and `npx @volley/vwr-s3-cli get ...` on their behalf.
+9. **Amplitude flag management also requires the AWS session.** The `flag add`, `flag remove`, and `flag status` sub-commands use the same SSO credentials. Same rule: verify the session first, hand off login to the human if it's expired.
+10. **Always pass `--platform` exactly.** Valid values are `SAMSUNG_TV`, `LG_TV`, `FIRE_TV`, `IOS_MOBILE`, `ANDROID_MOBILE`, or `WEB`. Case and underscores matter — `firetv` or `fire-tv` will fail silently.
 
 ---
 
@@ -34,10 +37,11 @@ A comprehensive guide for developers and AI agents building TV games on the Voll
 8. [On-Screen Keyboard](#8-on-screen-keyboard)
 9. [Remote Mode vs Controller Mode](#9-remote-mode-vs-controller-mode)
 10. [Dev Mode Testing](#10-dev-mode-testing)
-11. [Vite Build Configuration for TV](#11-vite-build-configuration-for-tv)
-12. [TV Deployment](#12-tv-deployment)
-13. [Common Pitfalls](#13-common-pitfalls)
-14. [Complete Code Examples](#14-complete-code-examples)
+11. [Dev and Test Workflows with VWR](#11-dev-and-test-workflows-with-vwr)
+12. [Vite Build Configuration for TV](#12-vite-build-configuration-for-tv)
+13. [TV Deployment](#13-tv-deployment)
+14. [Common Pitfalls](#14-common-pitfalls)
+15. [Complete Code Examples](#15-complete-code-examples)
 
 ---
 
@@ -1859,7 +1863,201 @@ if (DEEPGRAM_API_KEY) console.log(`Deepgram proxy: ws://localhost:${DG_PROXY_POR
 
 ---
 
-## 11. Vite Build Configuration for TV
+## 11. Dev and Test Workflows with VWR
+
+VWR (Volley Web Runtime) lets you develop and test your game on real TV and mobile devices by loading it in an iframe inside the shell app. The shell launches VWR, which in turn loads the Hub and your game as iframes. You don't need to worry about shells, VWR Loader, or VWR itself — just ensure you're on the correct SDK and shell versions.
+
+```
+Shell (TV/Mobile) → VWR Loader → VWR → Hub/Games (iframes)
+```
+
+### Prerequisites
+
+| Component | Minimum Version |
+|-----------|----------------|
+| `@volley/platform-sdk` | >= v7.40.3 |
+| Fire TV shell | >= 6.1.0 |
+| Samsung TV shell | >= 1.9.2 |
+| LG TV shell | >= 1.6.0 |
+| Android mobile | >= 2026.02.07 (394) |
+| iOS mobile (dev) | >= v.4.9.4(3) |
+| iOS mobile (prod) | >= v.4.9.4(4) |
+
+> **Versions may shift.** If things aren't working with the latest shell builds, reach out to the @Foundation Team.
+
+Verify your Platform SDK version in `package.json`:
+
+```json
+{
+  "dependencies": {
+    "@volley/platform-sdk": "^v7.40.3"
+  }
+}
+```
+
+### Find Your Device ID
+
+This is a manual step — the human must do this on the physical device.
+
+1. Install or open the **Dev Volley app** (not the production app) on your TV or mobile device.
+2. Navigate to the Hub page.
+3. Look for the **debug overlay** — the device ID is displayed there (e.g. `8wesayw-823dhaw-213sadw`).
+4. Copy it exactly, **including any dashes**. The CLI uses this as a lookup key in S3, so a wrong ID means a config that never gets loaded.
+
+> **For AI agents:** You cannot retrieve the device ID programmatically. Ask the human to read it from the screen and paste it into the chat.
+
+### VWR S3 CLI Setup
+
+The `@volley/vwr-s3-cli` CLI handles device config creation, S3 upload, CloudFront cache invalidation, and Amplitude `vwr-enabled` flag management. No need to clone the platform repo or write JSON by hand.
+
+**1. Set up AWS SSO credentials (human must do this — agents cannot):**
+
+If you've never configured the Volley AWS SSO profile on this machine, run the interactive setup first. You'll need access to the **TVDevelopers** IAM role — if you don't have it, ask your manager or the @Foundation team to grant it.
+
+```bash
+aws configure sso
+```
+
+When prompted, enter:
+
+| Prompt | Value |
+|--------|-------|
+| SSO session name | Any name you like, e.g. `volley` |
+| SSO start URL | `https://volley.awsapps.com/start` |
+| SSO region | `us-east-1` |
+| SSO registration scopes | Press Enter to accept the default |
+
+Your browser will open for authentication. Sign in with your Volley SSO credentials (the same ones you use for Okta/Google SSO). Once you approve, the CLI will list available accounts — select the one with the **TVDevelopers** role. When prompted for a profile name, use something memorable (e.g. `volley-tv`).
+
+Then log in and export the profile:
+
+```bash
+aws sso login --profile volley-tv
+export AWS_PROFILE=volley-tv
+```
+
+To verify it worked:
+
+```bash
+aws sts get-caller-identity --profile volley-tv
+```
+
+You should see your account ID and the TVDevelopers role ARN.
+
+> **SSO sessions expire every 12 hours.** If you get `ExpiredTokenException` or any auth error, re-run `aws sso login --profile volley-tv`. Agents: if a CLI command fails with an auth error, tell the human to re-run this command rather than attempting it yourself.
+
+> **For AI agents:** You can run all `vwr-s3-cli` commands once the human confirms their SSO session is active. Check first with `aws sts get-caller-identity --profile <profile>`. If that returns an error, stop and ask the human to log in.
+
+**2. Create your device config with `setup` (fastest path):**
+
+```bash
+npx @volley/vwr-s3-cli setup \
+    --device-id <your-device-id> \
+    --platform <platform> \
+    --env <env> \
+    --launch-url <your-game-url>
+```
+
+Example — registering a dev device on LG:
+
+```bash
+npx @volley/vwr-s3-cli setup \
+    --device-id 8wesayw-823dhaw-213sadw \
+    --platform LG_TV \
+    --env dev \
+    --launch-url https://my-game.ngrok.io
+```
+
+**CLI flags:**
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--device-id <id>` | Yes | — | Your TV's device ID |
+| `--platform <platform>` | Yes | — | `SAMSUNG_TV`, `LG_TV`, `FIRE_TV`, `IOS_MOBILE`, `ANDROID_MOBILE`, or `WEB` |
+| `--env <env>` | No | `dev` | Environment for defaults (`dev`, `staging`, `prod`) |
+| `--launch-url <url>` | No | — | URL for VWR to load in an iframe (e.g. your ngrok game URL) |
+
+**Environment defaults controlled by `--env`:**
+
+| Field | dev | staging | prod |
+|-------|-----|---------|------|
+| `hubUrl` | `https://game-clients-dev.volley.tv/hub` | `https://game-clients-staging.volley.tv/hub` | `https://game-clients.volley.tv/hub` |
+| `trustedDomains` | `https://game-clients-dev.volley.tv` | `https://game-clients-staging.volley.tv` | `https://game-clients.volley.tv` |
+| `vwrUrl` | Latest VWR version deployed to that env (fetched from S3) | Same | Same |
+
+When `--launch-url` is provided, trusted domains are auto-detected and the command runs non-interactively.
+
+**Alternative: `generate` for full control:**
+
+```bash
+npx @volley/vwr-s3-cli generate
+```
+
+This walks you through each config field step by step with interactive prompts.
+
+### Other CLI Commands
+
+```bash
+# Get your existing config
+npx @volley/vwr-s3-cli get --device-id <id> --platform <platform>
+
+# Edit your config interactively
+npx @volley/vwr-s3-cli edit --device-id <id> --platform <platform>
+
+# Delete your config
+npx @volley/vwr-s3-cli delete --device-id <id> --platform <platform>
+
+# Check built-in help
+npx @volley/vwr-s3-cli --help
+npx @volley/vwr-s3-cli setup --help
+```
+
+### Amplitude `vwr-enabled` Flag
+
+The `vwr-enabled` Amplitude flag is the on/off switch for VWR on a device. Even with an S3 config file, VWR won't load unless the device is on the flag's whitelist. The `setup` command adds your device automatically, but you can manage it manually:
+
+```bash
+# Check flag status
+npx @volley/vwr-s3-cli flag status --device-id <id>
+
+# Add device to flag
+npx @volley/vwr-s3-cli flag add --device-id <id>
+
+# Remove device from flag
+npx @volley/vwr-s3-cli flag remove --device-id <id>
+```
+
+### Launch Your Game
+
+Once the S3 config is uploaded and the Amplitude flag is enabled:
+
+1. **Human step:** Force-quit and relaunch the Dev Volley shell app on your device. VWR config is fetched at app start-up, so a cold restart is required after any config change.
+2. The shell will detect the VWR config for your device ID, load VWR, which will then load the Hub.
+3. If you set a `launchUrl`, VWR will navigate to that URL inside an iframe after the Hub loads.
+
+> **For AI agents:** You can verify the config is correct before the human relaunches by running `npx @volley/vwr-s3-cli get --device-id <id> --platform <platform>` and checking the `launchUrl` and `trustedDomains` values. If the game URL uses ngrok, remind the human that the ngrok tunnel must be running (`ngrok http 3000` or similar) before launching.
+
+### VWR Troubleshooting
+
+**RPC Connection Timeout** (`BrowserIpc.connect: Timed out`):
+Typically caused by trusted origins mismatch. Check the browser console for rejected messages and verify trusted origins match the actual origins (watch for `http` vs `https`, port differences, etc.).
+
+**Unable to use `vwr-s3-cli`:**
+1. Ensure you're logged in via the **TVDeveloper** SSO profile — re-run `aws sso login` if needed.
+2. Check command syntax with `npx @volley/vwr-s3-cli [command] --help`.
+3. Escalate to the @Foundation team if the tool is crashing.
+
+**App fails to launch in VWR:**
+1. Verify the device ID is correctly whitelisted on the Amplitude flag.
+2. Ensure `launchUrl` includes any required query parameters.
+3. Run `npx @volley/vwr-s3-cli get` to inspect your S3 config and `npx @volley/vwr-s3-cli edit` to fix it.
+4. Escalate to @Foundation with your device ID, platform, and shell app version.
+
+> **Source:** [Notion — Dev and Test Workflows with VWR](https://www.notion.so/2e4442bc9713800e82eae17bf850ee25)
+
+---
+
+## 12. Vite Build Configuration for TV
 
 ### Build Target
 
@@ -1933,7 +2131,7 @@ export default defineConfig({
 
 ---
 
-## 12. TV Deployment
+## 13. TV Deployment
 
 ### Overview
 
@@ -2050,7 +2248,7 @@ ares-launch --device <device-name> com.yourpackage
 
 ---
 
-## 13. Common Pitfalls
+## 14. Common Pitfalls
 
 A consolidated list of every gotcha documented in the learnings system.
 
@@ -2077,7 +2275,7 @@ A consolidated list of every gotcha documented in the learnings system.
 
 ---
 
-## 14. Complete Code Examples
+## 15. Complete Code Examples
 
 ### Full App.tsx (Display)
 
