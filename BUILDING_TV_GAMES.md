@@ -3,7 +3,7 @@
 A comprehensive guide for developers and AI agents building TV games on the Volley platform. Covers Fire TV, Samsung Tizen, and LG webOS with D-pad remote navigation.
 
 **Target audience**: Anyone starting a new TV game project from scratch.
-**Reference implementation**: `emoji-multiplatform` and `jeopardy-fire-web`.
+**Reference implementation**: `emoji-multiplatform` and `jeopardy-fire-web` (display/TV). `wheel-of-fortune` (controller/phone).
 
 ---
 
@@ -21,6 +21,13 @@ A comprehensive guide for developers and AI agents building TV games on the Voll
 8. **VWR device testing requires human-owned credentials.** The `@volley/vwr-s3-cli` needs an active AWS SSO session (TVDevelopers role) that only the human can create. **Never attempt `aws sso login` or `aws configure sso` yourself.** Instead, check whether the human already has an active session by running `aws sts get-caller-identity --profile <profile>`. If that fails, tell the human to follow the credential setup steps in Section 11. Once the session is active, you *can* run CLI commands like `npx @volley/vwr-s3-cli setup ...` and `npx @volley/vwr-s3-cli get ...` on their behalf.
 9. **Amplitude flag management also requires the AWS session.** The `flag add`, `flag remove`, and `flag status` sub-commands use the same SSO credentials. Same rule: verify the session first, hand off login to the human if it's expired.
 10. **Always pass `--platform` exactly.** Valid values are `SAMSUNG_TV`, `LG_TV`, `FIRE_TV`, `IOS_MOBILE`, `ANDROID_MOBILE`, or `WEB`. Case and underscores matter — `firetv` or `fire-tv` will fail silently.
+11. **Controller apps MUST use `@volley/platform-sdk`.** Do not generate random UUIDs for device identity — use `useDeviceInfo()` from the Platform SDK. All Volley production apps wrap in `PlatformProvider`. See Section 16 for the full controller setup guide.
+12. **Use `WGFServer`, not `VGFServer`.** The older `VGFServer` class creates Socket.IO internally and lacks production features. `WGFServer` accepts an explicit Socket.IO instance and supports `RedisRuntimeSchedulerStore`. See Section 17.
+13. **Use `@volley/logger`, not raw pino.** All Volley services use `@volley/logger` with `createLoggerHttpMiddleware` for request tracing via UUID. Raw pino lacks request IDs and structured HTTP logging. See Section 17.3.
+14. **Redis must be resilient.** Never use `ioredis-mock` in production. Use exponential backoff with jitter (`retryStrategy`), `maxRetriesPerRequest: null`, and `enableOfflineQueue: true`. See Section 17.4.
+15. **Health endpoints: two, not one.** Every server needs `/health` (liveness) AND `/health/ready` (readiness with dependency checks). Kubernetes/ECS/GameLift route traffic based on readiness. See Section 17.5.
+16. **Platform URLs must be stage-aware.** Never hardcode `platform-dev.volley-services.net`. Use a lookup table: local/dev -> dev, staging -> staging, production -> production. See Section 18.2.
+17. **Display Electron IPC must be dynamic.** Do not use a static preload object. Use `ipcMain.handle()` + `ipcRenderer.invoke()` for session ID, backend URL, and stage. See Section 18.3.
 
 ---
 
@@ -42,6 +49,10 @@ A comprehensive guide for developers and AI agents building TV games on the Voll
 13. [TV Deployment](#13-tv-deployment)
 14. [Common Pitfalls](#14-common-pitfalls)
 15. [Complete Code Examples](#15-complete-code-examples)
+16. [Controller App Development (Phone)](#16-controller-app-development-phone)
+17. [Server Production Readiness](#17-server-production-readiness)
+18. [Display Production Readiness](#18-display-production-readiness)
+19. [Monorepo Infrastructure](#19-monorepo-infrastructure)
 
 ---
 
@@ -241,8 +252,8 @@ mkdir -p apps/display/src
   },
   "dependencies": {
     "@your-game/shared": "workspace:*",
-    "@volley/platform-sdk": "7.40.0",
-    "@volley/vgf": "4.3.1",
+    "@volley/platform-sdk": "^7.42.0",
+    "@volley/vgf": "^4.8.0",
     "focus-trap-react": "^12.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -301,7 +312,7 @@ mkdir -p apps/server/src
   "dependencies": {
     "@your-game/shared": "workspace:*",
     "@volley/logger": "^1.4.1",
-    "@volley/vgf": "4.3.1",
+    "@volley/vgf": "^4.8.0",
     "@volley/waterfall": "2.5.3",
     "express": "^5.2.1"
   },
@@ -1715,10 +1726,10 @@ import express from "express"
 import { createServer } from "node:http"
 import { WebSocketServer, WebSocket as ServerWebSocket } from "ws"
 import {
-    VGFServer,
-    SocketIOTransport,
+    WGFServer,
     MemoryStorage,
 } from "@volley/vgf/server"
+import { Server as SocketIOServer } from "socket.io"
 import { createGameRuleset } from "./ruleset"
 import type { GameServices } from "./services"
 
@@ -1786,13 +1797,8 @@ if (DEEPGRAM_API_KEY) {
 
 // --- VGF Server ---
 const storage = new MemoryStorage()
-const transport = new SocketIOTransport({
-    httpServer,
-    storage,
-    logger: console,
-    socketOptions: {
-        cors: { origin: true, methods: ["GET", "POST"], credentials: true },
-    },
+const io = new SocketIOServer(httpServer, {
+    cors: { origin: true, methods: ["GET", "POST"], credentials: true },
 })
 
 const services: GameServices = {
@@ -1809,14 +1815,14 @@ const services: GameServices = {
 const game = createGameRuleset(services)
 const PORT = 8080
 
-const server = new VGFServer({
+const server = new WGFServer({
     port: PORT,
-    app,
+    expressApp: app,
     httpServer,
-    transport,
+    socketIOServer: io,
     storage,
     logger: console,
-    game,
+    gameRuleset: game,
 })
 
 server.start()
@@ -2664,8 +2670,8 @@ For a new TV game project:
 - [ ] Run `npm login` and verify access to `@volley` packages
 - [ ] Set up monorepo (Section 1): `pnpm-workspace.yaml`, root `package.json`, `tsconfig.base.json`
 - [ ] Create `packages/shared` with game state type and `createInitialGameState()`
-- [ ] Create `apps/display` with `@volley/vgf@4.3.1`, `@volley/platform-sdk@7.40.0`, `focus-trap-react`
-- [ ] Create `apps/server` with `@volley/vgf@4.3.1`, `@volley/waterfall`, `@volley/logger`
+- [ ] Create `apps/display` with `@volley/vgf@^4.8.0`, `@volley/platform-sdk@^7.42.0`, `focus-trap-react`
+- [ ] Create `apps/server` with `@volley/vgf@^4.8.0`, `@volley/waterfall`, `@volley/logger`
 - [ ] Run `pnpm install`
 - [ ] Create `detectPlatform.ts` utility
 - [ ] Create `MaybePlatformProvider` (conditional Platform SDK)
@@ -2682,3 +2688,1154 @@ For a new TV game project:
 - [ ] Add `@vitejs/plugin-legacy` with `target: "chrome68"` for Fire TV builds
 - [ ] Test with `?inputMode=remote` and `?volley_platform=FIRE_TV`
 - [ ] Deploy to target TV platform (Section 12)
+- [ ] Create `apps/controller` (Section 16) with `@volley/platform-sdk`, `@volley/vgf`, `react-router-dom`
+- [ ] Wrap controller App in `PlatformProvider` (with `gameId`, `stage`, `tracking`)
+- [ ] Use Platform SDK `useDeviceInfo()` for device identity (not custom UUIDs)
+- [ ] Configure Vite code splitting for controller build
+
+---
+
+## 16. Controller App Development (Phone)
+
+This section covers building the **phone controller app** — the mobile web app that players open (via QR code or URL) to interact with a TV game. The controller runs in a mobile browser and communicates with the VGF server over Socket.IO.
+
+> **Context:** This section was written by comparing three production Volley projects:
+> - **Wheel of Fortune** (`wheel-of-fortune`) — VGF game, closest reference for controller patterns
+> - **CoComelon Mobile** (`cocomelon-mobile`) — Platform SDK app (non-VGF, raw WebSocket)
+> - **Weekend Casino** (`weekend-poker`) — VGF game
+
+### 16.1 Required Packages
+
+Every controller app on the Volley platform **must** include these packages:
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `@volley/platform-sdk` | `^7.42.0` | Auth, analytics, lifecycle, device identity, native bridge |
+| `@volley/vgf` | `^4.8.0` | Game state sync, Socket.IO transport, VGF hooks |
+| `react` | `^19.0.0` | UI framework |
+| `react-dom` | `^19.0.0` | DOM renderer |
+| `react-router-dom` | `^7.8.0` | Client-side routing (standard across Volley apps) |
+| `uuid` | `^11.1.0` | UUID generation (fallback identity) |
+
+**Optional but recommended:**
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `@volley/tracking` | `^7.40.0` | Analytics event tracking (if not using platform-sdk's built-in Segment) |
+| `@datadog/browser-rum` | `^6.10.0` | Real User Monitoring — crash reporting, session replay |
+| `@datadog/browser-logs` | `^6.10.0` | Structured browser logging to Datadog |
+
+**Dev dependencies:**
+
+| Package | Purpose |
+|---------|---------|
+| `@vitejs/plugin-react-swc` | Faster JSX transpilation than `@vitejs/plugin-react` (used by WoF) |
+| `vitest` + `@testing-library/react` + `jsdom` | Testing stack |
+| `sass-embedded` | SCSS modules (if using SCSS instead of CSS-in-JS) |
+| `@storybook/react-vite` | Component development (optional) |
+
+### 16.2 PlatformProvider for Controllers
+
+Both Cocomelon and Wheel of Fortune wrap their entire app in `PlatformProvider`. The controller version is simpler than the display version — no `MaybePlatformProvider` conditional needed because the controller always runs in a mobile browser (not on a TV shell), so `volley_hub_session_id` is not required.
+
+```typescript
+// apps/controller/src/App.tsx
+import { PlatformProvider } from "@volley/platform-sdk/react"
+
+const GAME_ID = import.meta.env.VITE_GAME_ID ?? "your-game-id"
+const STAGE = import.meta.env.VITE_PLATFORM_SDK_STAGE ?? "staging"
+const SEGMENT_WRITE_KEY = import.meta.env.VITE_SEGMENT_WRITE_KEY ?? ""
+
+export function App() {
+    return (
+        <PlatformProvider
+            options={{
+                gameId: GAME_ID,
+                appVersion: __APP_VERSION__,  // Defined in vite.config.ts
+                stage: STAGE,
+                tracking: {
+                    segmentWriteKey: SEGMENT_WRITE_KEY,
+                },
+            }}
+        >
+            <ControllerRoot />
+        </PlatformProvider>
+    )
+}
+```
+
+> **Note:** Unlike the display app, the controller does NOT need the `MaybePlatformProvider` pattern because it never runs inside the TV shell. The `PlatformProvider` can be rendered unconditionally.
+
+### 16.3 Device Identity
+
+**Do NOT generate random UUIDs in localStorage.** Use Platform SDK's `useDeviceInfo()` hook for device identification. This ties into Volley's user identity system and ensures consistent tracking across sessions.
+
+```typescript
+// WRONG — custom localStorage UUID approach
+function useDeviceToken() {
+    const [token] = useState(() => {
+        return localStorage.getItem("device-token") ?? crypto.randomUUID()
+    })
+    return { deviceToken: token }
+}
+
+// CORRECT — use Platform SDK for device identity
+import { useDeviceInfo } from "@volley/platform-sdk/react"
+
+function useControllerSession() {
+    const { deviceId } = useDeviceInfo()
+    const sessionId = new URLSearchParams(window.location.search).get("sessionId")
+
+    const transport = useMemo(() =>
+        createSocketIOClientTransport({
+            url: BACKEND_URL,
+            query: {
+                sessionId,
+                userId: deviceId,   // Platform SDK device ID, not random UUID
+                clientType: ClientType.Controller,
+            },
+        }),
+        [sessionId, deviceId],
+    )
+
+    return { transport, sessionId, clientId: deviceId }
+}
+```
+
+### 16.4 VGF Transport Configuration (Controller)
+
+The controller transport setup is similar to the display but uses `ClientType.Controller`:
+
+```typescript
+// apps/controller/src/lib/createControllerTransport.ts
+import { SocketIOClientTransport, ClientType } from "@volley/vgf"
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_SERVER_ENDPOINT ?? "http://localhost:8001"
+
+export function createControllerTransport(sessionId: string, userId: string) {
+    return new SocketIOClientTransport({
+        url: BACKEND_URL,
+        query: {
+            sessionId,
+            userId,
+            clientType: ClientType.Controller,
+        },
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 3000,
+        reconnectionDelayMax: 6000,
+        transports: ["polling", "websocket"],  // MUST include polling fallback
+    })
+}
+```
+
+**Critical:** Do NOT put `query` inside a nested `socketOptions` object. This clobbers VGF's internal session/user/clientType params (see Section 4).
+
+### 16.5 Provider Stacking Order
+
+Wheel of Fortune's provider order (recommended pattern):
+
+```typescript
+// apps/controller/src/App.tsx
+export function App() {
+    return (
+        <PlatformProvider options={platformOptions}>
+            <BrowserRouter>
+                <Routes>
+                    <Route path="/" element={<RoomLayout />}>
+                        <Route index element={<PhaseRouter />} />
+                    </Route>
+                </Routes>
+            </BrowserRouter>
+        </PlatformProvider>
+    )
+}
+
+// apps/controller/src/layouts/RoomLayout.tsx
+export function RoomLayout() {
+    const { transport, sessionId, clientId } = useControllerSession()
+
+    if (!sessionId) return <ErrorScreen message="No session ID found" />
+
+    return (
+        <VGFProvider transport={transport} autoConnect>
+            <SessionProvider sessionId={sessionId}>
+                <LoggerProvider>
+                    <Outlet />
+                </LoggerProvider>
+            </SessionProvider>
+        </VGFProvider>
+    )
+}
+```
+
+**Provider order (outermost to innermost):**
+1. `PlatformProvider` — Auth, analytics, device info (no game dependency)
+2. `BrowserRouter` — URL routing (no game dependency)
+3. `VGFProvider` — Game state transport (needs session ID from URL)
+4. `SessionProvider` — Session context (needs VGF connection)
+5. `LoggerProvider` — Logging context (optional, can go anywhere)
+
+### 16.6 Phase-Based Routing
+
+Both VGF game controllers route UI based on the current game phase. Wheel of Fortune uses a `PhaseRouter` component:
+
+```typescript
+// apps/controller/src/components/PhaseRouter.tsx
+import { vgfHooks } from "../hooks/vgfHooks"
+
+export function PhaseRouter() {
+    const phase = vgfHooks.usePhase()
+
+    switch (phase) {
+        case "LOBBY":
+            return <LobbyController />
+        case "PLAYING":
+            return <PlayingController />
+        case "ROUND_END":
+            return <RoundEndController />
+        case "GAME_OVER":
+            return <GameOverController />
+        default:
+            return <Loading />
+    }
+}
+```
+
+This pattern is standard across VGF games — the server's VGF phase drives the controller's UI.
+
+### 16.7 Typed VGF Hooks
+
+Create a shared hooks file that types the VGF hooks to your game state:
+
+```typescript
+// apps/controller/src/hooks/vgfHooks.ts  (or packages/web-common/)
+import { getVGFHooks, type GameRuleset } from "@volley/vgf"
+import type { YourGameState, PhaseName } from "@your-game/shared"
+
+export const vgfHooks = getVGFHooks<
+    GameRuleset<YourGameState>,
+    YourGameState,
+    PhaseName
+>()
+
+// Re-export for convenience
+export const useStateSync = vgfHooks.useStateSync
+export const useStateSyncSelector = vgfHooks.useStateSyncSelector
+export const useDispatch = vgfHooks.useDispatch
+export const useDispatchThunk = vgfHooks.useDispatchThunk
+export const usePhase = vgfHooks.usePhase
+```
+
+> **Tip:** Wheel of Fortune puts these hooks in a shared `web-common` package so both display and controller use the same typed hooks. This prevents type drift between the two apps.
+
+### 16.8 Vite Configuration for Controllers
+
+```typescript
+// apps/controller/vite.config.ts
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react-swc"  // Faster than plugin-react
+import { readFileSync } from "fs"
+
+const pkg = JSON.parse(readFileSync("./package.json", "utf-8"))
+
+export default defineConfig(({ mode }) => ({
+    plugins: [react()],
+    define: {
+        __APP_VERSION__: JSON.stringify(pkg.version),
+    },
+    server: {
+        port: 5174,
+        host: true,  // Allow access from other devices on the network (for phone testing)
+    },
+    build: {
+        target: "es2019",
+        sourcemap: mode === "production",
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    react: ["react", "react-dom"],
+                    "shared-core": [
+                        "@volley/vgf",
+                        "@volley/platform-sdk",
+                    ],
+                },
+            },
+        },
+    },
+    // Base path for deployment (adjust for your CDN/hosting)
+    base: mode === "production"
+        ? "/your-game-controller/latest/"
+        : "/",
+}))
+```
+
+**Key differences from the display Vite config:**
+- No `@vitejs/plugin-legacy` (phones have modern browsers, unlike Fire TV)
+- No `target: "chrome68"` (that's a Fire TV constraint)
+- `host: true` so you can test from a real phone on the same network
+- Deployment base path is for the controller, not the display
+
+### 16.9 Environment Variables
+
+Controller apps should support these environment variables (via Vite's `VITE_` prefix):
+
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `VITE_BACKEND_SERVER_ENDPOINT` | Yes | `http://localhost:8001` | VGF server URL |
+| `VITE_GAME_ID` | Yes | — | Game identifier for Platform SDK |
+| `VITE_PLATFORM_SDK_STAGE` | Yes | `"staging"` | Platform SDK stage |
+| `VITE_SEGMENT_WRITE_KEY` | No | — | Segment analytics key |
+| `VITE_DD_APPLICATION_ID` | No | — | Datadog RUM application ID |
+| `VITE_DD_CLIENT_TOKEN` | No | — | Datadog RUM client token |
+| `VITE_DEEPGRAM_API_KEY` | No | — | Deepgram STT (if using voice) |
+
+Use `.env` files per environment:
+```
+.env              # Local development defaults
+.env.development  # Dev server config
+.env.staging      # Staging config
+.env.production   # Production config
+```
+
+### 16.10 React StrictMode and VGF
+
+**All VGF apps must disable React StrictMode.** VGF's `SocketIOClientTransport` tears down message handlers on unmount. StrictMode's double-mount cycle causes the transport to disconnect and fail to reconnect, breaking state sync permanently.
+
+```typescript
+// main.tsx — do NOT use StrictMode with VGF
+import { createRoot } from "react-dom/client"
+import { App } from "./App"
+
+const root = document.getElementById("root")
+if (!root) throw new Error("Root element not found")
+
+createRoot(root).render(<App />)  // No <StrictMode> wrapper
+```
+
+### 16.11 Mobile-First HTML Template
+
+```html
+<!-- apps/controller/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>Your Game - Controller</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body, #root {
+        width: 100%; height: 100%;
+        background: #000;
+        touch-action: manipulation;  /* Prevent double-tap zoom */
+        -webkit-user-select: none; user-select: none;  /* Prevent text selection */
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```
+
+**Key mobile settings:**
+- `viewport-fit=cover` — extends content under the notch/safe area
+- `user-scalable=no` — prevents pinch-to-zoom (game controller, not a web page)
+- `touch-action: manipulation` — prevents double-tap zoom delay
+- `-webkit-user-select: none` — prevents accidental text selection during gameplay
+
+### 16.12 Shared web-common Package Pattern
+
+Wheel of Fortune uses a `web-common` package shared between display and controller. This prevents type drift and duplicated VGF hook setup:
+
+```
+packages/
+  web-common/
+    src/
+      contexts/
+        SessionProvider.tsx    # Session ID context
+        LoggerProvider.tsx     # Logger context
+      hooks/
+        vgfHooks.ts           # Typed VGF hooks (getVGFHooks<...>())
+        useSessionId.ts       # Session ID hook
+        useLogger.ts          # Logger hook
+      lib/
+        logger.ts             # Console logger with metadata
+        createMockTransport.ts # Debug transport (no server needed)
+      constants/
+        environment.ts        # PLATFORM_API_URL, GAME_ID, etc.
+      utils/
+        classNames.ts         # CSS class utility
+        getPlatformApiUrl.ts  # Platform API URL resolver
+    package.json
+```
+
+This is optional but recommended for projects with both a display and controller app. It ensures both apps use identical VGF hook types and session management.
+
+### 16.13 Cocomelon vs VGF Controller Architecture
+
+Cocomelon Mobile is **not a VGF game** — it uses raw WebSocket with a custom state machine. However, its Platform SDK integration is a good reference:
+
+| Aspect | VGF Controller (e.g., WoF) | Non-VGF Controller (Cocomelon) |
+|--------|------------------------------|-------------------------------|
+| **Transport** | VGF `SocketIOClientTransport` | Custom `WebSocketManager` + `WebSocketDriver` |
+| **State sync** | VGF hooks (`useStateSync`, `usePhase`) | React Context + `useState` |
+| **Routing** | Phase-based (`PhaseRouter`) | Event-based (server sends nav events, `react-router-dom` navigates) |
+| **Game logic** | Server-side VGF reducers/thunks | Server-side (completely separate) |
+| **Platform SDK** | `PlatformProvider` with `gameId`, `stage`, `tracking` | Same pattern, identical config |
+| **Device identity** | `useDeviceInfo()` | `useAccount()` |
+| **Reconnection** | VGF built-in (5 attempts, 3-6s delays) | Custom state machine (15 attempts, exponential backoff, 30s max) |
+| **Microphone** | Deepgram SDK or VGF voice | Platform SDK `useMicrophone()` + custom DSP |
+
+**Key takeaway:** Regardless of whether a game uses VGF, all Volley controller apps use `@volley/platform-sdk` with `PlatformProvider` for auth, analytics, and device identity. This is non-negotiable for production deployment.
+
+---
+
+## 17. Server Production Readiness
+
+This section covers what a VGF game server needs to run on Volley's production infrastructure.
+
+> **Reference:** Wheel of Fortune's `vgf-service` is the production reference implementation.
+
+### 17.1 WGFServer vs VGFServer
+
+VGF v4.8.0 provides two server classes. **Use `WGFServer`, not `VGFServer`.**
+
+`WGFServer` is the newer API that accepts an explicit Socket.IO server instance, giving you control over CORS, middleware, and connection validation.
+
+```typescript
+// CORRECT — WGFServer pattern
+import { WGFServer, MemoryStorage, RedisRuntimeSchedulerStore } from "@volley/vgf/server"
+import { Server as SocketIOServer } from "socket.io"
+
+const io = new SocketIOServer(httpServer, {
+    cors: { origin: parseCorsOrigin(), methods: ["GET", "POST"] },
+})
+
+const storage = new MemoryStorage({ persistence: redisPersistence })
+const schedulerStore = new RedisRuntimeSchedulerStore({ redisClient: redis })
+
+const server = new WGFServer<YourGameState>({
+    logger,
+    port,
+    httpServer,
+    expressApp: app,
+    socketIOServer: io,       // Explicit Socket.IO injection
+    storage,
+    gameRuleset: game,
+    schedulerStore,           // Persistent scheduler (not noop)
+})
+
+server.start()
+```
+
+```typescript
+// WRONG — old VGFServer pattern (deprecated)
+import { VGFServer, MemoryStorage, SocketIOTransport } from "@volley/vgf/server"
+
+const transport = new SocketIOTransport({ httpServer, storage })
+const server = new VGFServer<YourGameState>({
+    game: ruleset,
+    httpServer, port, logger, storage, transport, app,
+    schedulerProvider,  // Noop scheduler — actions are lost on restart
+})
+```
+
+**Key differences:**
+- `WGFServer` takes a `socketIOServer` instance (you control CORS, middleware)
+- `WGFServer` takes a `schedulerStore` (persistent via Redis, survives restarts)
+- `VGFServer` creates its own Socket.IO internally (less control)
+- `VGFServer` uses a `SocketIOTransport` abstraction that WGF drops
+
+### 17.2 Required Server Packages
+
+| Package | Version | Purpose | WoF | Casino |
+|---------|---------|---------|-----|--------|
+| `@volley/vgf` | `^4.8.0` | Game framework | Yes | Yes |
+| `@volley/logger` | `^1.4.1` | Structured logging with request IDs | Yes | **MISSING** (uses pino) |
+| `socket.io` | `^4.8.1` | Explicit Socket.IO server (for WGFServer) | Yes | **MISSING** (VGF creates internally) |
+| `uuid` | `^11.1.0` | Request ID generation for logging | Yes | **MISSING** |
+| `ioredis` | `^5.4.0` | Redis client | Yes | Yes |
+| `express` | `^4.18.0` | HTTP server | Yes | Yes |
+| `cors` | `^2.8.5` | CORS middleware | Yes | Yes |
+
+### 17.3 @volley/logger
+
+All Volley production services use `@volley/logger` instead of raw pino. It provides structured logging with request tracing.
+
+```typescript
+// services/logger.ts
+import { createLogger } from "@volley/logger"
+
+export const logger = createLogger({
+    type: "node",
+    formatters: {
+        level(label: string) { return { level: label } },
+    },
+})
+```
+
+**HTTP request logging middleware** (generates UUID per request for tracing):
+
+```typescript
+// express.ts
+import { createLoggerHttpMiddleware } from "@volley/logger"
+import { v4 } from "uuid"
+
+app.use(createLoggerHttpMiddleware({
+    logger,
+    genReqId: () => v4(),
+}))
+```
+
+This adds `req.logger` and `res.logger` to every request, pre-populated with the request ID. All downstream log calls include the trace ID automatically.
+
+### 17.4 Redis Client (Production Pattern)
+
+The dev-friendly "optional Redis" pattern is fine for local development, but production requires a resilient client that never gives up on reconnection.
+
+```typescript
+// services/redis.ts
+import Redis from "ioredis"
+
+export function createRedisClient(url: string): Redis {
+    const client = new Redis(url, {
+        maxRetriesPerRequest: null,    // Unlimited retries per command
+        enableOfflineQueue: true,       // Queue commands while disconnected
+        retryStrategy(times: number) {
+            // Exponential backoff: 50ms, 100ms, 200ms, ..., capped at 5s
+            // Jitter: 0-500ms random to prevent thundering herd
+            return Math.min(Math.pow(2, times) * 25, 5000) + Math.random() * 500
+        },
+    })
+
+    client.on("connect", () => logger.info("Redis connected"))
+    client.on("ready", () => logger.info("Redis ready"))
+    client.on("error", (err) => logger.error({ err }, "Redis error"))
+    client.on("close", () => logger.warn("Redis connection closed"))
+
+    return client
+}
+```
+
+**Why this matters:**
+- `maxRetriesPerRequest: null` prevents ioredis from throwing after 20 retries (default)
+- `enableOfflineQueue: true` queues commands and replays when connection is restored
+- Exponential backoff with jitter prevents all pods reconnecting simultaneously after a Redis restart
+
+### 17.5 Health Check Endpoints
+
+Production deployments (Kubernetes, ECS, GameLift) require two health endpoints:
+
+```typescript
+// health/index.ts
+router.get("/health", (_req, res) => {
+    res.json({
+        version: process.env.npm_package_version ?? "unknown",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+    })
+})
+
+router.get("/health/ready", async (req, res) => {
+    const redisCheck = await checkRedis(redis)
+
+    const checks = { basic: { status: "healthy" }, redis: redisCheck }
+    const allHealthy = Object.values(checks).every(c => c.status === "healthy")
+
+    res.status(allHealthy ? 200 : 503).json({
+        status: allHealthy ? "healthy" : "unhealthy",
+        version: process.env.npm_package_version ?? "unknown",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        checks,
+    })
+})
+
+async function checkRedis(redis: Redis): Promise<{ name: string; status: string; message: string }> {
+    try {
+        const pong = await Promise.race([
+            redis.ping(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+        ])
+        return { name: "redis", status: pong === "PONG" ? "healthy" : "unhealthy", message: "" }
+    } catch (err) {
+        return { name: "redis", status: "unhealthy", message: String(err) }
+    }
+}
+```
+
+**Endpoint usage:**
+- `/health` — Basic liveness probe (always returns 200 if the process is running)
+- `/health/ready` — Readiness probe (returns 503 if Redis is down, preventing traffic routing)
+
+### 17.6 Graceful Shutdown
+
+```typescript
+// index.ts (after server.start())
+const SHUTDOWN_TIMEOUT = parseInt(process.env.SHUTDOWN_TIMEOUT ?? "25000", 10)
+
+async function shutdown(signal: string) {
+    logger.info({ signal }, "Shutdown signal received")
+    const timer = setTimeout(() => {
+        logger.error("Graceful shutdown timed out, forcing exit")
+        process.exit(1)
+    }, SHUTDOWN_TIMEOUT)
+
+    try {
+        server.stop()
+        await redis.quit()
+        httpServer.close()
+        clearTimeout(timer)
+        logger.info("Graceful shutdown complete")
+        process.exit(0)
+    } catch (err) {
+        logger.error({ err }, "Error during shutdown")
+        process.exit(1)
+    }
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"))
+process.on("SIGINT", () => void shutdown("SIGINT"))
+```
+
+### 17.7 Error Handling Middleware
+
+Register these **after** `server.start()` (which registers VGF's own routes):
+
+```typescript
+// middleware/errorHandlers.ts
+
+// 404 handler (must be after all routes)
+app.use((_req, res) => {
+    res.status(404).json({ error: "Not Found" })
+})
+
+// Error handler (4-arg signature tells Express this handles errors)
+app.use((err: Error & { statusCode?: number }, req, res, _next) => {
+    req.logger?.error({
+        error: { name: err.name, message: err.message, stack: err.stack },
+        request: { method: req.method, url: req.url },
+        source: "express-error-handler",
+    })
+
+    const statusCode = err.statusCode ?? 500
+    const message = statusCode >= 500 ? "Internal Server Error" : err.message
+    res.status(statusCode).json({ error: message })
+})
+```
+
+### 17.8 Session Validation Middleware
+
+WoF validates session creation requests before VGF processes them:
+
+```typescript
+// session/session.middleware.ts
+app.post("/api/session", (req, res, next) => {
+    logger.info({
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
+    }, "Session creation request")
+
+    // Add custom validation here (auth tokens, rate limiting, etc.)
+    next()  // Pass to VGF's session handler
+})
+```
+
+Register this **before** `server.start()`.
+
+### 17.9 Docker Configuration
+
+**Dockerfile (multi-stage build):**
+
+```dockerfile
+# Base stage
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@latest --activate
+WORKDIR /app
+
+# Dependencies stage
+FROM base AS dependencies
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/server/package.json ./apps/server/
+RUN --mount=type=secret,id=npm_token \
+    NPM_TOKEN=$(cat /run/secrets/npm_token) pnpm install --frozen-lockfile
+
+# Build stage
+FROM dependencies AS build
+COPY . .
+RUN pnpm -r build
+
+# Production stage
+FROM base AS production
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/shared/dist ./packages/shared/dist
+COPY --from=build /app/packages/shared/package.json ./packages/shared/
+COPY --from=build /app/apps/server/dist ./apps/server/dist
+COPY --from=build /app/apps/server/package.json ./apps/server/
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+
+ENTRYPOINT ["node", "apps/server/dist/index.js"]
+```
+
+**docker-compose.yml:**
+
+```yaml
+services:
+  vgf-server:
+    build:
+      context: .
+      target: ${NODE_ENV:-development}
+      secrets:
+        - npm_token
+    ports:
+      - "${VGF_PORT:-8001}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - REDIS_URL=redis://redis:6379
+      - PORT=3000
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - game-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - game-network
+
+networks:
+  game-network:
+    driver: bridge
+
+secrets:
+  npm_token:
+    environment: NPM_TOKEN
+```
+
+### 17.10 Server Environment Variables
+
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `NODE_ENV` | No | `development` | Node environment |
+| `PORT` | No | `3000` | HTTP server port |
+| `REDIS_URL` | Yes (prod) | — | Redis connection string (`redis://host:6379`) |
+| `LOG_LEVEL` | No | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
+| `CORS_ORIGIN` | No | `*` | Allowed origins (comma-separated, or `*`) |
+| `SHUTDOWN_TIMEOUT` | No | `25000` | Graceful shutdown timeout in ms |
+| `STAGE` | No | `local` | Deployment stage (`local`, `dev`, `staging`, `production`) |
+
+---
+
+## 18. Display Production Readiness
+
+This section covers what the display app (TV screen) needs for production deployment.
+
+### 18.1 Platform SDK as Hard Dependency
+
+The display app **must** have `@volley/platform-sdk` as a required dependency (not an optional peer). On real TV hardware, the SDK provides authentication, session management, and analytics that the game cannot function without.
+
+```json
+// apps/display/package.json
+{
+    "dependencies": {
+        "@volley/platform-sdk": "7.42.0",
+        "@volley/vgf": "^4.8.0"
+    }
+}
+```
+
+The `MaybePlatformProvider` pattern (skip SDK on web/dev) is still correct for the display, since it may run in a browser during development without the TV shell. But the package itself must be installed.
+
+### 18.2 Stage-Aware Platform URL Resolution
+
+Platform API URLs must resolve per stage. Do not hardcode dev URLs.
+
+```typescript
+// utils/getPlatformApiUrl.ts
+const PLATFORM_API_URLS: Record<string, string> = {
+    local: "platform-dev.volley-services.net",
+    test: "platform-dev.volley-services.net",
+    dev: "platform-dev.volley-services.net",
+    staging: "platform-staging.volley-services.net",
+    production: "platform.volley-services.net",
+}
+
+export function getPlatformApiUrl(stage?: string): string {
+    if (!stage) return PLATFORM_API_URLS["production"]!
+    return PLATFORM_API_URLS[stage] ?? PLATFORM_API_URLS["production"]!
+}
+```
+
+### 18.3 Electron IPC Configuration
+
+On GameLift Streams or a real TV, the Electron main process receives configuration from the platform and must pass it to the renderer via IPC.
+
+**Main process (electron/main.cjs):**
+
+```javascript
+const { app, BrowserWindow, ipcMain } = require("electron")
+
+// Config from CLI args, env vars, or platform launcher
+const config = {
+    sessionId: process.env.SESSION_ID ?? "",
+    backendUrl: process.env.BACKEND_URL ?? "http://localhost:3000",
+    stage: process.env.STAGE ?? "local",
+}
+
+// Register IPC handlers BEFORE creating the window
+ipcMain.handle("get-session-id", () => config.sessionId)
+ipcMain.handle("get-backend-url", () => config.backendUrl)
+ipcMain.handle("get-stage", () => config.stage)
+
+function createWindow() {
+    const win = new BrowserWindow({
+        width: 1920,
+        height: 1080,
+        fullscreen: true,
+        frame: false,
+        webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            preload: path.join(__dirname, "preload.cjs"),
+        },
+    })
+
+    // Open DevTools unless production
+    if (config.stage !== "production") {
+        win.webContents.openDevTools()
+    }
+}
+```
+
+**Preload (electron/preload.cjs):**
+
+```javascript
+const { contextBridge, ipcRenderer } = require("electron")
+
+contextBridge.exposeInMainWorld("electronAPI", {
+    getSessionId: () => ipcRenderer.invoke("get-session-id"),
+    getBackendUrl: () => ipcRenderer.invoke("get-backend-url"),
+    getStage: () => ipcRenderer.invoke("get-stage"),
+    platform: "ELECTRON",
+    isElectron: true,
+})
+```
+
+**Renderer (config loader):**
+
+```typescript
+// utils/configLoader.ts
+export async function loadConfig() {
+    if (window.electronAPI?.isElectron) {
+        return {
+            sessionId: await window.electronAPI.getSessionId(),
+            backendUrl: await window.electronAPI.getBackendUrl(),
+            stage: await window.electronAPI.getStage(),
+        }
+    }
+    // Fallback: Vite env vars for browser dev
+    return {
+        sessionId: new URLSearchParams(window.location.search).get("sessionId"),
+        backendUrl: import.meta.env.VITE_SERVER_URL ?? "http://localhost:3000",
+        stage: import.meta.env.VITE_PLATFORM_SDK_STAGE ?? "local",
+    }
+}
+```
+
+### 18.4 Mock Transport for Headless Debug
+
+WoF provides a `createMockTransport()` that allows the display to run without a VGF server. This is useful for UI development, Storybook, and automated testing.
+
+```typescript
+// lib/createMockTransport.ts
+import { SocketIOClientTransport } from "@volley/vgf/client"
+
+export function createMockTransport(): SocketIOClientTransport {
+    // Return a transport that never connects but doesn't throw.
+    // Components fall back to loading/error states gracefully.
+    return new SocketIOClientTransport({
+        url: "http://localhost:0",
+        query: { sessionId: "mock", userId: "mock", clientType: "Display" },
+    })
+}
+```
+
+Use in the app:
+
+```typescript
+const useMock = !sessionId && stage === "local"
+const transport = useMock ? createMockTransport() : createDisplayTransport(config)
+
+<VGFProvider transport={transport} clientOptions={{ autoConnect: !useMock }}>
+```
+
+### 18.5 Display Vite Configuration (Production Pattern)
+
+```typescript
+// apps/display/vite.config.ts
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react-swc"
+import path from "path"
+import pkg from "./package.json" with { type: "json" }
+
+export default defineConfig(({ mode }) => ({
+    plugins: [react()],
+    base: "./",
+    define: {
+        __APP_VERSION__: JSON.stringify(pkg.version),
+    },
+    resolve: {
+        alias: { "@": path.resolve(__dirname, "./src") },
+        dedupe: ["react", "react-dom"],   // Prevent multiple React instances
+    },
+    optimizeDeps: {
+        force: true,
+        include: ["react", "react/jsx-runtime", "react-dom"],
+    },
+    build: {
+        target: "es2019",
+        sourcemap: mode === "development" ? "inline" : true,
+        chunkSizeWarningLimit: 300,
+        minify: "esbuild",
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (id.includes("@volley/") || id.includes("@your-game/"))
+                        return "shared-core-deps"
+                    if (id.includes("three") || id.includes("@react-three"))
+                        return "three-vendor"
+                    if (id.includes("react-dom")) return "react-dom"
+                    if (id.includes("/react/")) return "react"
+                    if (id.includes("node_modules")) return "vendor"
+                },
+            },
+        },
+    },
+}))
+```
+
+---
+
+## 19. Monorepo Infrastructure
+
+This section covers root-level monorepo configuration required for Volley production projects.
+
+### 19.1 .npmrc
+
+Create `.npmrc` at the monorepo root:
+
+```
+inject-workspace-packages=true
+```
+
+This ensures workspace package symlinks are injected into `node_modules` correctly. WoF has this; Casino does not.
+
+### 19.2 Turborepo
+
+WoF uses Turborepo for task orchestration, caching, and delta-based CI. Add `turbo.json` at the root:
+
+```json
+{
+    "$schema": "https://turbo.build/schema.json",
+    "globalEnv": ["NODE_ENV"],
+    "tasks": {
+        "build": {
+            "dependsOn": ["^build"],
+            "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/*.test.*", "!**/*.spec.*"],
+            "outputs": ["dist/**", ".electron-builder/**"],
+            "env": ["VITE_*"]
+        },
+        "dev": {
+            "persistent": true
+        },
+        "lint": {
+            "inputs": ["$TURBO_DEFAULT$", "!**/*.md"]
+        },
+        "typecheck": {
+            "inputs": ["$TURBO_DEFAULT$", "!**/*.md"]
+        },
+        "test": {
+            "dependsOn": ["^build"],
+            "inputs": ["$TURBO_DEFAULT$", "!**/*.md"],
+            "outputs": ["coverage/**"]
+        }
+    }
+}
+```
+
+Install as a root dev dependency:
+
+```bash
+pnpm add -Dw turbo
+```
+
+Then update root `package.json` scripts:
+
+```json
+{
+    "scripts": {
+        "build": "turbo build",
+        "test": "turbo test",
+        "typecheck": "turbo typecheck",
+        "lint": "turbo lint",
+        "dev": "turbo dev"
+    }
+}
+```
+
+### 19.3 Prettier + lint-staged
+
+WoF enforces consistent formatting on every commit.
+
+**`.prettierrc`:**
+```json
+{
+    "trailingComma": "es5",
+    "tabWidth": 2,
+    "semi": false,
+    "singleQuote": true
+}
+```
+
+**Root `package.json` additions:**
+```json
+{
+    "devDependencies": {
+        "prettier": "^3.2.0",
+        "lint-staged": "^16.0.0"
+    },
+    "lint-staged": {
+        "*.{ts,tsx,js,jsx,json}": "prettier --write"
+    },
+    "scripts": {
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "prepare": "git config core.hooksPath .hooks"
+    }
+}
+```
+
+**`.hooks/pre-commit`:**
+```bash
+#!/bin/sh
+npx lint-staged
+```
+
+### 19.4 Shared Configuration Packages
+
+WoF extracts ESLint and TypeScript configuration into shared workspace packages:
+
+```
+packages/
+  eslint-config/
+    package.json    # @your-game/eslint-config
+    base.js         # Shared ESLint rules
+  tsconfig/
+    package.json    # @your-game/tsconfig
+    base.json       # Shared compiler options
+    react.json      # React-specific (extends base)
+    node.json       # Node-specific (extends base)
+```
+
+Apps reference these:
+```json
+// apps/server/tsconfig.json
+{ "extends": "../../packages/tsconfig/node.json" }
+
+// apps/display/tsconfig.json
+{ "extends": "../../packages/tsconfig/react.json" }
+```
+
+### 19.5 CI/CD Pipeline (GitHub Actions)
+
+WoF's CI runs jobs in parallel with Turbo caching and delta-based filtering:
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo typecheck --filter='...[origin/main]'
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo test --filter='...[origin/main]'
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [typecheck, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter='...[origin/main]'
+```
+
+**Key features:**
+- `--filter='...[origin/main]'` only runs tasks for packages changed since main (delta CI)
+- `concurrency.cancel-in-progress` cancels outdated CI runs on force-push
+- `needs: [typecheck, test]` means build only runs after checks pass
+- Parallel jobs (typecheck + test run simultaneously)
+
+### 19.6 Setup and Dev Scripts
+
+WoF provides shell scripts for first-time setup and multi-service development:
+
+**`scripts/setup.sh`** — First-time project setup:
+```bash
+#!/bin/bash
+# Check prerequisites (node, pnpm, docker)
+# Copy .env.example to .env if not exists
+# Validate NPM_TOKEN for @volley packages
+# Run pnpm install
+# Build shared packages
+```
+
+**`scripts/dev-all.sh`** — Start all services:
+```bash
+#!/bin/bash
+# Start Docker services (Redis, VGF server)
+# Wait for health checks to pass
+# Start display and controller dev servers via Turbo
+```
+
