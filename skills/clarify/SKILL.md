@@ -4,7 +4,7 @@ Structured requirements elicitation when a task is ambiguous.
 
 ## Usage
 
-Type "clarify requirements", "interview me", or invoke when AGENTS.md S2 Ambiguity Pre-check fails.
+Invoke with `/clarify` or `/clarify [topic]`. Also triggered when the Ambiguity Pre-check (AGENTS.md §2) fails.
 
 ## Instructions
 

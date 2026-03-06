@@ -240,12 +240,11 @@ In these cases, reduce your initial confidence estimate by 0.2 and verify explic
 
 1. Identify the weakest link — what specific artifact is missing or failing?
 2. Try a different approach OR ask for the missing info
-3. Max 4 retries; if still below 0.8, escalate to user
+3. **Hard cap — 4 total attempts** on the same sub-problem. If you hit 4, escalate to user with a structured blocker report (§7).
 
-**Detect pathological loops:**
+**Detect pathological loops** (these fire before the hard cap):
 - **Oscillation** — After 2 failed attempts, check: "Am I reverting changes from the previous attempt?" If yes, you're flip-flopping between two broken states. Stop and reframe the problem entirely.
 - **Stagnation** — After 3 attempts with similar error messages (>70% overlap), stop coding. Adopt Researcher mode (§6): investigate root cause before trying again.
-- **Hard cap** — Never exceed 6 total attempts on the same sub-problem. If you hit 6, escalate with a structured blocker report (§7).
 
 ---
 
@@ -670,6 +669,19 @@ Keep entries concise. Sacrifice grammar for the sake of concision. This file hel
 4. Review lessons at session start
 
 > For Quick-mode tasks, a lessons entry is only warranted if the mistake is likely to recur.
+
+---
+
+## 11. Skills
+
+Skills are reusable workflow scripts in `skills/*/SKILL.md`. When invoked, read the skill file and follow its instructions directly.
+
+| Command | Skill | When to Use |
+|---------|-------|-------------|
+| `/unstuck` | `skills/unstuck/SKILL.md` | When stuck after multiple failed attempts. Routes to a Thinking Mode (§6) based on the type of block. |
+| `/clarify` | `skills/clarify/SKILL.md` | When the Ambiguity Pre-check (§2) fails. Structured interview to elicit missing requirements. |
+
+Skills are invoked by explicit command only — not by pattern-matching on conversational phrases. The user must type the command (or a close paraphrase like "run the unstuck skill") to trigger it.
 
 ---
 

@@ -4,7 +4,7 @@ Break through stagnation with lateral thinking modes.
 
 ## Usage
 
-Type "I'm stuck", "think sideways", or explicitly request a mode.
+Invoke with `/unstuck` or `/unstuck [mode]`.
 
 ## Available Modes
 
