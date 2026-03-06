@@ -53,7 +53,10 @@ The entry point (`CLAUDE.md` / `.cursorrules`) directs the agent to read the fra
 ├── AGENTS.md              # Core guidelines (start here)
 ├── AGENTS-PROJECT.md      # Project-specific config (customise this)
 ├── AGENTS-REACT-TS.md     # Language/framework patterns (swap for your stack)
-└── AGENTS-RLM.md          # Large context handling (>100K tokens)
+├── AGENTS-RLM.md          # Large context handling (>100K tokens)
+└── skills/                # Reusable workflow scripts (invoked by command)
+    ├── clarify/SKILL.md   # Structured requirements interview
+    └── unstuck/SKILL.md   # Lateral thinking modes for stagnation
 ```
 
 ### Reading Order
@@ -71,12 +74,13 @@ The agent reads these in sequence. The first three sections of `AGENTS.md` are m
 
 ### AGENTS.md — The Core Framework
 
-The heart of the system. Ten sections covering everything from mandatory verification to workflow orchestration.
+The heart of the system. Eleven sections covering everything from mandatory verification to workflow orchestration.
 
 **Sections 1–3: Mandatory Requirements**
 
 - **Verification Blocks** — Every code change must end with a structured block reporting: tests passed/failed, types checked, new tests added, and a confidence score (0.0–1.0). No more "I've updated the file" without proof.
 - **Complexity Triggers** — Before starting any task, the agent checks whether the work touches 3+ files, requires architectural decisions, is ambiguous, or involves risk. If any trigger fires, it must decompose the problem before writing code.
+- **Ambiguity Pre-check** — For Standard/Critical tasks, three questions must pass before coding: is the goal specific? Are constraints explicit? Are success criteria defined? If any answer is "no", clarify first.
 - **Testing Requirements** — Tests are the source of truth. If a test fails, the *code* is wrong, not the test. Bug fixes require regression tests. New features require both unit and integration tests.
 
 **Sections 4–7: Quality Controls**
@@ -84,11 +88,12 @@ The heart of the system. Ten sections covering everything from mandatory verific
 - **Pre-Completion Checklist** — Eight items the agent must verify before claiming work is done, including "Would a staff engineer approve this?"
 - **Confidence Calibration** — A defined scale from 0.0 to 1.0 with explicit actions at each level. Below 0.5 means stop and ask for clarification.
 - **Meta-Cognitive Process** — For complex tasks: Decompose, Solve, Verify, Synthesise, Reflect.
+- **Thinking Modes** — Six cognitive lenses (Contrarian, Simplifier, Researcher, Architect, Ontologist, Hacker) for when standard decomposition isn't cutting it. Each reframes the problem through a different perspective, with a routing heuristic to pick the right one.
 - **Communication Style** — Concise, no filler, explicit about assumptions and risks.
 
 **Section 8: Behavioural Guidelines (LLM Failure Mitigations)**
 
-Nine subsections targeting specific, research-backed failure modes:
+Fifteen subsections targeting specific, research-backed failure modes:
 
 | Subsection | What It Prevents |
 |---|---|
@@ -101,11 +106,18 @@ Nine subsections targeting specific, research-backed failure modes:
 | 8.7 Never Trust Arithmetic | Mental maths errors in calculations |
 | 8.8 Confirmation Bias | Rubber-stamping the user's assumptions |
 | 8.9 Robustness & Consistency | Blind retries instead of restructuring |
+| 8.10 DRY & SOLID Principles | Dogmatic application of patterns without pragmatism |
+| 8.11 Error Handling | Swallowed errors, missing context, wrong catch level |
+| 8.12 Security Practices | Hardcoded secrets, unsanitised input, SQL injection |
+| 8.13 Documentation & Comments | Stale comments, TODO without tickets, commenting the "what" |
+| 8.14 Logging & Observability | Free-text logs, logged secrets, wrong log levels |
+| 8.15 Dependency & Type Awareness | Hallucinated APIs, unchecked method signatures |
 
-**Sections 9–10: Workflow & Task Management**
+**Sections 9–11: Workflow, Tasks & Skills**
 
 - **Workflow Orchestration** — When to use plan mode, subagent strategies, autonomous execution rules, multi-agent coordination with human review gates.
 - **Task Management** — Structured planning, progress tracking, and a self-improvement loop that captures lessons from mistakes.
+- **Skills** — Reusable workflow scripts invoked by explicit command (`/unstuck`, `/clarify`). See below.
 
 **Appendices**
 
@@ -113,6 +125,19 @@ Nine subsections targeting specific, research-backed failure modes:
 - **B: Quick Reference** — Decision flow chart and a Known LLM Failure Modes table
 - **C: Learnings System** — Institutional memory for documented mistakes
 - **D: Project Documentation** — Guidelines for writing project knowledge docs
+
+---
+
+### Skills — Reusable Workflow Scripts
+
+Skills are invoked by explicit command. They provide structured workflows for situations where general guidelines aren't enough.
+
+| Command | What It Does |
+|---------|-------------|
+| `/clarify` | Runs a structured requirements interview when the task is ambiguous. The agent adopts an interviewer role, targets the biggest ambiguity, and presents options rather than open-ended questions. Ends with a bullet-point summary before proceeding. |
+| `/unstuck` | Routes into a Thinking Mode based on the type of block. Repeated failures → Contrarian, too many options → Simplifier, missing info → Researcher, structural issues → Architect, analysis paralysis → Hacker, vague requirements → Ontologist. |
+
+Skills live in `skills/*/SKILL.md` and are referenced from `AGENTS.md` §11. Add your own by creating a new directory under `skills/` with a `SKILL.md` file.
 
 ---
 
