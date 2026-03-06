@@ -23,3 +23,14 @@ These files contain mandatory requirements for code changes, testing, and verifi
 
 **Conditional reading (load only when needed):**
 - **[AGENTS-RLM.md](./AGENTS-RLM.md)** — Read ONLY when context exceeds ~100K tokens or task requires processing most/all of a large input. Not needed for typical tasks.
+
+## Skills
+
+When the user types any of these commands (or matching trigger phrases), read the corresponding skill file and follow its instructions:
+
+| Trigger | Action |
+|---------|--------|
+| "I'm stuck" / "think sideways" / `/unstuck` | Read `skills/unstuck/SKILL.md` and follow it |
+| "clarify requirements" / "interview me" / `/clarify` | Read `skills/clarify/SKILL.md` and follow it |
+
+**Important:** Read the skill file with the Read tool and execute its instructions directly.
