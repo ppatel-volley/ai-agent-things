@@ -25,7 +25,7 @@
 4. Check [`learnings/INDEX.md`](./learnings/INDEX.md) before starting work (if it exists)
 5. See [`AGENTS-RLM.md`](./AGENTS-RLM.md) only when context exceeds ~100K tokens
 
-> **Context budget note:** This document is ~680 lines. For **Quick-mode** tasks, sections 1–3 plus the execution mode table are sufficient (~130 lines). Sections 4–10 add value primarily for Standard/Critical tasks. Skim or skip appendices unless referenced.
+> **Context budget note:** This document is ~720 lines. For **Quick-mode** tasks, sections 1–3 plus the execution mode table are sufficient (~140 lines). Sections 4–10 add value primarily for Standard/Critical tasks. Skim or skip appendices unless referenced.
 
 ### Execution Modes
 
@@ -75,6 +75,7 @@ Import project and language-specific guidelines as needed:
 - Types: [PASSED/FAILED] — `pnpm typecheck` (**MANDATORY** — vitest does NOT check types)
 - Build: [PASSED/FAILED] — `pnpm build` (**MANDATORY** — must produce shippable artifact)
 - New tests added: [YES - describe / NO - justify]
+- Semantic check: [Does the change satisfy the original request? YES/caveat]
 - Confidence: [0.0-1.0] [brief reason if below 0.9]
 ```
 
@@ -123,14 +124,29 @@ Import project and language-specific guidelines as needed:
 
 **If NO triggers apply:** Proceed directly, but still include the Verification Block.
 
+### Ambiguity Pre-check (Standard/Critical)
+
+Before coding, verify these three conditions are met. If any answer is "no", clarify before proceeding:
+- **Goal** — Is the objective specific and measurable? ("Add pagination" vs "make it better")
+- **Constraints** — Are limitations explicit? (Performance targets, compatibility, scope boundaries)
+- **Success criteria** — How will we know it's done? (Observable behaviour, not just "it works")
+
+This checks clarity of the *problem*. Confidence calibration (§5) checks correctness of the *solution*. Both gates matter — you can be confident in a solution to the wrong problem.
+
 ### Clarification Gate
 
-Ask when:
+**How to clarify** (don't just say "please clarify"):
+- Target the single biggest ambiguity, not scatter-shot questions
+- Present 2-3 likely interpretations rather than an open-ended prompt
+- Don't start solving while still clarifying — gather information first
+- Ask ontological questions when requirements are vague: "What are you assuming?" / "What must exist first?"
+
+**Ask when:**
 - A missing input would materially change the answer
 - The risk of a wrong assumption is high
 - The task depends on user preference (taste, policy, priority)
 
-Don't ask when:
+**Don't ask when:**
 - It's an implementation detail the user doesn't care about (e.g., `forEach` vs `map`)
 - The answer is in the codebase and you can look it up yourself
 - You can make a safe, reversible choice and note the assumption
@@ -226,6 +242,11 @@ In these cases, reduce your initial confidence estimate by 0.2 and verify explic
 2. Try a different approach OR ask for the missing info
 3. Max 4 retries; if still below 0.8, escalate to user
 
+**Detect pathological loops:**
+- **Oscillation** — After 2 failed attempts, check: "Am I reverting changes from the previous attempt?" If yes, you're flip-flopping between two broken states. Stop and reframe the problem entirely.
+- **Stagnation** — After 3 attempts with similar error messages (>70% overlap), stop coding. Adopt Researcher mode (§6): investigate root cause before trying again.
+- **Hard cap** — Never exceed 6 total attempts on the same sub-problem. If you hit 6, escalate with a structured blocker report (§7).
+
 ---
 
 ## 6. Meta-Cognitive Process (Complex Tasks)
@@ -245,6 +266,28 @@ For class-level or module-level code generation with large context available:
 - Holistic generation maintains internal consistency across methods, shared state, and type contracts
 - Incremental generation risks introducing inconsistencies between methods generated in separate passes
 - Exception: when the class is very large (>200 lines), decompose by logical concern, not by method
+
+### Thinking Modes
+
+When complexity triggers fire, confidence drops below 0.7, or you're stuck, adopt an explicit reasoning strategy rather than just "decomposing" generically. Each mode is a cognitive lens — a deliberate way to reframe the problem.
+
+| Mode | Core Question | When to Adopt |
+|------|--------------|---------------|
+| **Contrarian** | "What if the opposite is true?" | When you've committed to an approach without examining assumptions. Forces you to argue the opposing position before proceeding. |
+| **Simplifier** | "What can we remove?" | When complexity is overwhelming. Challenge every component: "Is this truly necessary? What breaks if removed?" Target minimum viable solution. |
+| **Researcher** | "What information are we missing?" | When the problem is unclear or you're guessing. Stop coding. Define unknowns explicitly, gather evidence systematically, form a hypothesis before acting. |
+| **Architect** | "Are we fighting the architecture?" | When surgical changes keep failing — same bug recurring in different forms, simple changes requiring many files. Diagnose structural root cause, propose minimal restructuring. |
+| **Ontologist** | "What IS this, really?" | When requirements are vague or you suspect you're solving symptoms. Ask four questions: essence, root cause, prerequisites, hidden assumptions. |
+| **Hacker** | "What constraints are actually required?" | When blocked and standard approaches have failed. Question each constraint, look for bypasses, consider solving a simpler adjacent problem. |
+
+**Routing heuristic** (when you're stuck and unsure which mode to adopt):
+- Repeated similar failures → **Contrarian** (challenge assumptions)
+- Too many options → **Simplifier** (reduce scope)
+- Missing information → **Researcher** (investigate)
+- Analysis paralysis → **Hacker** (just make it work)
+- Structural issues → **Architect** (redesign)
+
+You don't need to adopt a mode for every task. These are tools for when standard decomposition isn't cutting it.
 
 ### Output Template (complex tasks)
 
