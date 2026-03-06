@@ -14,6 +14,7 @@ Invoke with `/unstuck` or `/unstuck [mode]`.
 | **simplifier** | "Cut scope, return to MVP" | When complexity is overwhelming |
 | **researcher** | "What information are we missing?" | When the problem is unclear |
 | **architect** | "Restructure the approach entirely" | When the current design is wrong |
+| **ontologist** | "What IS this, really?" | When requirements are vague or you're solving symptoms |
 | **hacker** | "Make it work first, elegance later" | When overthinking blocks progress |
 
 ## Instructions

@@ -133,6 +133,8 @@ Before coding, verify these three conditions are met. If any answer is "no", cla
 
 This checks clarity of the *problem*. Confidence calibration (§5) checks correctness of the *solution*. Both gates matter — you can be confident in a solution to the wrong problem.
 
+> For a structured interview workflow, see `/clarify` (§11).
+
 ### Clarification Gate
 
 **How to clarify** (don't just say "please clarify"):
@@ -245,6 +247,8 @@ In these cases, reduce your initial confidence estimate by 0.2 and verify explic
 **Detect pathological loops** (these fire before the hard cap):
 - **Oscillation** — After 2 failed attempts, check: "Am I reverting changes from the previous attempt?" If yes, you're flip-flopping between two broken states. Stop and reframe the problem entirely.
 - **Stagnation** — After 3 attempts with similar error messages (>70% overlap), stop coding. Adopt Researcher mode (§6): investigate root cause before trying again.
+
+> If you're stuck and unsure how to reframe, see `/unstuck` (§11).
 
 ---
 

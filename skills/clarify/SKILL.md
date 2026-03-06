@@ -4,11 +4,11 @@ Structured requirements elicitation when a task is ambiguous.
 
 ## Usage
 
-Invoke with `/clarify` or `/clarify [topic]`. Also triggered when the Ambiguity Pre-check (AGENTS.md §2) fails.
+Invoke with `/clarify` or `/clarify [topic]`.
 
 ## Instructions
 
-When the user invokes this skill (or when the Ambiguity Pre-check flags gaps):
+When the user invokes this skill:
 
 1. **Adopt the interviewer role.** You are ONLY gathering information. Do not write code, edit files, or start solving until the interview is complete.
 
