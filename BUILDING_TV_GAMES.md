@@ -1,4 +1,6 @@
-# Building Smart TV Games with VGF + Platform SDK
+# Building Smart TV Games with WGF + Platform SDK
+
+> **Naming note:** The framework was formerly known as VGF (Volley Game Framework) and is now **WGF** (also called **WeGF**). The npm package is still `@volley/vgf`, the CLI is still `vgf`, and most React exports still use the `VGF` prefix (e.g. `VGFProvider`). The primary server class is now `WGFServer` — do **not** use the older `VGFServer`.
 
 A comprehensive guide for developers and AI agents building TV games on the Volley platform. Covers Fire TV, Samsung Tizen, and LG webOS with D-pad remote navigation.
 
@@ -28,6 +30,11 @@ A comprehensive guide for developers and AI agents building TV games on the Voll
 15. **Health endpoints: two, not one.** Every server needs `/health` (liveness) AND `/health/ready` (readiness with dependency checks). Kubernetes/ECS/GameLift route traffic based on readiness. See Section 17.5.
 16. **Platform URLs must be stage-aware.** Never hardcode `platform-dev.volley-services.net`. Use a lookup table: local/dev -> dev, staging -> staging, production -> production. See Section 18.2.
 17. **Display Electron IPC must be dynamic.** Do not use a static preload object. Use `ipcMain.handle()` + `ipcRenderer.invoke()` for session ID, backend URL, and stage. See Section 18.3.
+18. **Use `vgf multi-client` for multi-client testing.** Never test display and controller in separate browser tabs manually — use the built-in multi-client tester which manages sessions, user IDs, and client types automatically. See Section 20.
+19. **Thunks must be idempotent.** WGF uses at-least-once delivery — thunks may execute multiple times on server failover. Never assume a thunk runs exactly once. See Section 22.
+20. **Use `SessionMember` for lobby patterns.** Do not roll your own player-tracking state. WGF provides `useSessionMembers`, `useClientActions` (with `toggleReady()`), and built-in reducers `__CLIENT_TOGGLE_READY` / `__CLIENT_UPDATE_STATE`. See Section 21.
+21. **Handle reconnection in the UI.** Use `useConnectionStatus()` to show connection state. Clients that disconnect and reconnect are matched by `userId` — WGF restores their `SessionMember` rather than creating a new one. See Section 24.
+22. **Phase names have reserved words.** Never name a phase `root`, `internal`, or include colons (`:`) — these are reserved by WGF and will throw `InvalidPhaseNameError`. See Section 4.
 
 ---
 
@@ -37,7 +44,7 @@ A comprehensive guide for developers and AI agents building TV games on the Voll
 1. [Project Scaffolding](#1-project-scaffolding)
 2. [Architecture Overview](#2-architecture-overview)
 3. [Platform SDK Setup](#3-platform-sdk-setup)
-4. [VGF Setup](#4-vgf-setup)
+4. [WGF Setup](#4-wgf-setup)
 5. [TV Remote Input Handling](#5-tv-remote-input-handling)
 6. [D-pad Navigation Patterns](#6-d-pad-navigation-patterns)
 7. [Voice Input on TV](#7-voice-input-on-tv)
@@ -53,6 +60,12 @@ A comprehensive guide for developers and AI agents building TV games on the Voll
 17. [Server Production Readiness](#17-server-production-readiness)
 18. [Display Production Readiness](#18-display-production-readiness)
 19. [Monorepo Infrastructure](#19-monorepo-infrastructure)
+20. [Multi-Client Testing](#20-multi-client-testing)
+21. [Lobby & SessionMember Patterns](#21-lobby--sessionmember-patterns)
+22. [Failover & Idempotency](#22-failover--idempotency)
+23. [Testing Patterns](#23-testing-patterns)
+24. [Reconnection Handling](#24-reconnection-handling)
+25. [Observability](#25-observability)
 
 ---
 
@@ -96,6 +109,18 @@ npm whoami       # your npm username
 ---
 
 ## 1. Project Scaffolding
+
+### Quick Start with CLI
+
+The fastest way to scaffold a new project is the WGF CLI:
+
+```bash
+vgf create your-game
+```
+
+This creates the full monorepo (client, server, k8s directories), sets up NPM authentication for `@volley` packages, and configures the dev environment. Options: `--skip-install`, `--skip-git`.
+
+> **For AI agents:** If the CLI is available, prefer `vgf create` over manual scaffolding. The manual steps below are for reference and customisation.
 
 ### Monorepo Structure
 
@@ -595,7 +620,7 @@ export function isTV(platform: TVPlatform): boolean {
 
 ---
 
-## 4. VGF Setup
+## 4. WGF Setup
 
 ### Package Exports
 
@@ -856,6 +881,8 @@ export function createGameRuleset(services: GameServices): GameRuleset<YourGameS
 > **Note on `actions`:** The `actions` field is required by VGF's `GameRuleset` type. Pass `actions: {}` (empty object) — this is valid and type-safe. You do not need any type cast.
 
 #### Phase Definitions
+
+**Phase naming constraints:** Phase names cannot be `root` (reserved for root-level actions), `internal` (reserved for the framework), or contain colons (used as namespace delimiters). Violating these throws `InvalidPhaseNameError`.
 
 ```typescript
 interface Phase {
@@ -1693,6 +1720,8 @@ if (!state.remoteMode && !state.controllerConnected) {
 ---
 
 ## 10. Dev Mode Testing
+
+> **Multi-client testing:** For testing display + controller(s) simultaneously, use `vgf multi-client` (Section 20). The URL parameters below are for single-client browser testing.
 
 ### URL Parameters for Testing
 
@@ -3834,8 +3863,764 @@ WoF provides shell scripts for first-time setup and multi-service development:
 **`scripts/dev-all.sh`** — Start all services:
 ```bash
 #!/bin/bash
-# Start Docker services (Redis, VGF server)
+# Start Docker services (Redis, WGF server)
 # Wait for health checks to pass
 # Start display and controller dev servers via Turbo
+```
+
+---
+
+## 20. Multi-Client Testing
+
+The single biggest source of integration bugs is testing the display in isolation without a controller (or vice versa). WGF provides a built-in multi-client tester that runs display and controller(s) side-by-side in a single browser window.
+
+### Launching the Tester
+
+```bash
+vgf multi-client
+```
+
+This starts a local server on port 9001. Open `http://localhost:9001` in your browser.
+
+### Interface Layout
+
+| Area | Position | Format | Purpose |
+|------|----------|--------|---------|
+| Display | Left side | 16:9, letterboxed | TV screen view |
+| Controllers | Right side | Up to 4 iframes, 9:16 each | Phone controller views |
+
+The controllers panel arranges iframes in up to 2 rows and auto-sizes based on controller count. It hides entirely when no controllers are active.
+
+Three floating toolbars provide controls:
+
+- **Top-left:** New session — creates a fresh session and reloads all iframes
+- **Bottom-left:** Settings — opens the query params editor
+- **Bottom-right:** Add/remove controllers (up to 4)
+
+### Query Params Editor
+
+The settings modal lets you edit query params passed to each client iframe. Each client (display + each controller slot 1–4) has its own key/value table. Params persist to `localStorage`. A reset button restores defaults.
+
+`clientType` and `sessionId` are **injected automatically** and not shown in the editor — you never need to set these manually. When a controller is removed, its params view becomes inactive rather than deleted.
+
+### User IDs
+
+Each client type gets a unique, persistent user ID stored in `localStorage`. The display and each controller slot (1–4) each have their own. This means:
+
+- Refreshing the page keeps the same user IDs (simulates reconnection)
+- Opening a new browser/incognito window generates fresh IDs (simulates new players)
+
+### Configuration
+
+| Option | Description |
+|--------|-------------|
+| `--client-host` | Host for both client types (fallback) |
+| `--display-host` | Host for the display client (overrides `--client-host`) |
+| `--controller-host` | Host for controller clients (overrides `--client-host`) |
+| `--backend-url` | Backend API endpoint |
+| `--dev-port` | Port for the multi-client interface (default: 9001) |
+
+```bash
+# Separate hosts for display and controllers
+vgf multi-client \
+  --display-host http://localhost:3000 \
+  --controller-host http://localhost:5173
+
+# Override just the backend
+vgf multi-client \
+  --backend-url http://localhost:8080
+
+# Different port for the tester itself
+vgf multi-client --dev-port 9002
+```
+
+### Typical Multi-Client Testing Workflow
+
+1. Start your WGF server: `pnpm --filter @your-game/server dev`
+2. Start display dev server: `pnpm --filter @your-game/display dev`
+3. Start controller dev server: `pnpm --filter @your-game/controller dev`
+4. Launch the tester:
+   ```bash
+   vgf multi-client \
+     --display-host http://localhost:3000 \
+     --controller-host http://localhost:5173 \
+     --backend-url http://localhost:8080
+   ```
+5. Click "New Session" in the top-left toolbar
+6. Click "+" in the bottom-right toolbar to add a controller
+7. Test the full flow: lobby → game → results with both clients visible
+
+### What to Test with Multiple Clients
+
+| Scenario | What to Verify |
+|----------|---------------|
+| Controller connects | Display updates lobby/player list, `onConnect` fires correctly |
+| Controller disconnects (close iframe) | Display handles absence, `onDisconnect` fires, timeout behaviour |
+| Multiple controllers | All players appear in `useSessionMembers`, turns work correctly |
+| State sync | Reducer dispatch from controller updates display in real-time |
+| Phase transitions | Both display and controller react to phase changes |
+| Reconnection | Remove controller, re-add it — same `userId` reconnects to existing `SessionMember` |
+
+> **For AI agents:** Always verify multi-client scenarios before considering a feature complete. Single-client testing misses state sync bugs, race conditions in `onConnect`/`onDisconnect`, and display/controller UI divergence.
+
+---
+
+## 21. Lobby & SessionMember Patterns
+
+WGF provides a built-in lobby system through `SessionMember` — do not roll your own player-tracking state.
+
+### SessionMember Structure
+
+When a client connects, WGF creates a `SessionMember` automatically:
+
+```typescript
+interface SessionMember {
+    sessionMemberId: string      // Unique ID for this membership
+    connectionId: string         // Current WebSocket connection ID
+    connectionState: ConnectionState  // "Connected" | "Disconnected"
+    isReady: boolean             // Ready-check state (defaults to false)
+    clientType: ClientType       // "DISPLAY" | "CONTROLLER"
+    state: SessionMemberState    // Custom per-client data (character, team, etc.)
+}
+```
+
+### Client Hooks
+
+```typescript
+import { getVGFHooks } from "@volley/vgf/client"
+
+const {
+    useSessionMembers,  // Returns all SessionMembers in the session
+    useSessionMember,   // Returns a specific SessionMember by ID
+    useClientId,        // Returns current client's member ID
+    useClientActions,   // Returns { toggleReady(), updateState() }
+} = getVGFHooks<any, YourGameState, string>()
+```
+
+### Ready-Check Pattern
+
+The standard lobby flow: players join, toggle ready, game starts when all are ready.
+
+**Client (controller):**
+
+```typescript
+function LobbyScreen() {
+    const { toggleReady, updateState } = useClientActions()
+    const members = useSessionMembers()
+    const myId = useClientId()
+
+    const me = members[myId]
+    const allReady = Object.values(members)
+        .filter((m) => m.clientType === "CONTROLLER")
+        .every((m) => m.isReady)
+
+    return (
+        <div>
+            <h2>Lobby</h2>
+            {Object.entries(members)
+                .filter(([_, m]) => m.clientType === "CONTROLLER")
+                .map(([id, member]) => (
+                    <div key={id}>
+                        Player {id} — {member.isReady ? "Ready" : "Waiting"}
+                    </div>
+                ))}
+            <button onClick={() => toggleReady()}>
+                {me?.isReady ? "Not Ready" : "Ready"}
+            </button>
+        </div>
+    )
+}
+```
+
+**Server (thunk to start the game):**
+
+```typescript
+export function createStartGameThunk() {
+    return async (ctx: IThunkContext<YourGameState>) => {
+        const members = ctx.getMembers()
+        const controllers = Object.values(members)
+            .filter((m) => m.clientType === "CONTROLLER")
+
+        if (controllers.length === 0) return
+        if (!controllers.every((m) => m.isReady)) return
+
+        ctx.dispatch("SET_PHASE", { phase: "playing" })
+    }
+}
+```
+
+### Built-In Client Reducers
+
+WGF provides these automatically — you do not need to define them:
+
+| Reducer | Triggered By | Effect |
+|---------|-------------|--------|
+| `__CLIENT_TOGGLE_READY` | `toggleReady()` | Flips `isReady` on the calling client's `SessionMember` |
+| `__CLIENT_UPDATE_STATE` | `updateState(data)` | Merges `data` into the client's `SessionMemberState` |
+
+### Custom SessionMemberState
+
+Store per-player data (character selection, team, display name) in `SessionMemberState`:
+
+```typescript
+// Client: update custom per-player state
+const { updateState } = useClientActions()
+updateState({ characterId: "wizard", displayName: "Player 1" })
+
+// Server: read in thunks or lifecycle hooks
+const members = ctx.getMembers()
+const playerData = members[clientId].state
+// playerData.characterId === "wizard"
+```
+
+### Advanced Lobby Patterns
+
+**Auto-start countdown:**
+
+```typescript
+// Server thunk: called after every toggleReady
+export function createCheckReadyThunk(services: GameServices) {
+    return async (ctx: IThunkContext<YourGameState>) => {
+        const members = ctx.getMembers()
+        const controllers = Object.values(members)
+            .filter((m) => m.clientType === "CONTROLLER")
+
+        if (controllers.length >= 2 && controllers.every((m) => m.isReady)) {
+            // Start a 3-second countdown, then transition
+            await ctx.scheduler.upsertTimeout({
+                name: "lobby-countdown",
+                duration: 3000,
+                thunkName: "START_GAME",
+            })
+            ctx.dispatch("SET_COUNTDOWN_ACTIVE", { active: true })
+        } else {
+            await ctx.scheduler.cancel("lobby-countdown")
+            ctx.dispatch("SET_COUNTDOWN_ACTIVE", { active: false })
+        }
+    }
+}
+```
+
+---
+
+## 22. Failover & Idempotency
+
+WGF is designed for production environments where servers restart, Redis connections drop, and pods get rescheduled. Understanding failover semantics is critical for writing correct server-side code.
+
+### At-Least-Once Thunk Delivery
+
+**Thunks may execute more than once.** When a server fails mid-thunk and recovers, the Scheduler replays in-progress work. This means:
+
+| Property | Requirement |
+|----------|-------------|
+| **Idempotent** | Running the same thunk twice with the same input must produce the same result |
+| **Re-entrant** | A thunk must be safe to call while a previous invocation is still running |
+
+```typescript
+// WRONG: Not idempotent — score increments on every replay
+export function createScoreThunk() {
+    return async (ctx: IThunkContext<YourGameState>) => {
+        const state = ctx.getState()
+        ctx.dispatch("SET_SCORE", { score: state.score + 10 })
+    }
+}
+
+// RIGHT: Idempotent — uses guard to prevent double-scoring
+export function createScoreThunk() {
+    return async (ctx: IThunkContext<YourGameState>) => {
+        const state = ctx.getState()
+        if (state.scoredCurrentQuestion) return  // Guard against replay
+        ctx.dispatch("MARK_SCORED", {})
+        ctx.dispatch("SET_SCORE", { score: state.score + 10 })
+    }
+}
+```
+
+### Scheduler Timer Modes
+
+The Scheduler API provides failover-safe timers. Two modes control how timers behave when the server goes down and recovers:
+
+| Mode | Behaviour During Downtime | On Recovery |
+|------|--------------------------|-------------|
+| **Hold** | Timer pauses while server is down | Resumes from where it left off (remaining time preserved) |
+| **Catch-up** | Timer is considered still running | If the elapsed time exceeds the duration, fires immediately |
+
+```typescript
+// Round timer: hold mode (fair — players don't lose time during outage)
+await ctx.scheduler.upsertTimeout({
+    name: "round-timer",
+    duration: 30000,
+    thunkName: "HANDLE_TIMEOUT",
+    // Hold is the default mode
+})
+
+// Show-results delay: catch-up mode (no point pausing a transition delay)
+await ctx.scheduler.upsertTimeout({
+    name: "show-results",
+    duration: 5000,
+    thunkName: "ADVANCE_PHASE",
+    mode: "catch-up",
+})
+```
+
+### Scheduler Operations
+
+```typescript
+// In any thunk via ctx.scheduler:
+await ctx.scheduler.upsertTimeout(config)  // Create or update a timer
+await ctx.scheduler.cancel("timer-name")   // Cancel a running timer
+await ctx.scheduler.pause("timer-name")    // Pause (preserves remaining time)
+await ctx.scheduler.resume("timer-name")   // Resume a paused timer
+```
+
+### RuntimeSchedulerStore
+
+For production, use `RedisRuntimeSchedulerStore` so timers survive server restarts:
+
+```typescript
+import { RedisRuntimeSchedulerStore } from "@volley/vgf/server"
+
+const runtimeSchedulerStore = new RedisRuntimeSchedulerStore(redisClient)
+
+const server = new WGFServer({
+    // ... other options
+    runtimeSchedulerStore,
+})
+```
+
+In dev mode, `MemoryStorage` works fine — timers are lost on restart but that's acceptable for development.
+
+### Long-Running Work Pattern
+
+For operations that take longer than a single tick (e.g. fetching questions from an API), track progress in state so replays can skip completed work:
+
+```typescript
+export function createLoadQuestionsThunk(services: GameServices) {
+    return async (ctx: IThunkContext<YourGameState>) => {
+        const state = ctx.getState()
+
+        // Skip if already loaded (idempotent guard)
+        if (state.questionsLoaded) return
+
+        const questions = await services.database.query(
+            "SELECT * FROM questions WHERE category = $1 LIMIT $2",
+            [state.category, state.totalQuestions],
+        )
+
+        ctx.dispatch("SET_QUESTIONS", { questions: questions.rows })
+        ctx.dispatch("SET_QUESTIONS_LOADED", { loaded: true })
+    }
+}
+```
+
+---
+
+## 23. Testing Patterns
+
+WGF code is highly testable because of its separation of concerns: reducers are pure functions, thunks receive an injectable context, and phases are declarative.
+
+### Reducer Unit Tests
+
+Reducers are pure — test them as plain functions:
+
+```typescript
+// __tests__/reducers.test.ts
+import { describe, it, expect } from "vitest"
+import { reducers } from "../src/reducers"
+import { createInitialGameState } from "@your-game/shared"
+
+describe("SET_SCORE", () => {
+    it("updates the score", () => {
+        const state = createInitialGameState()
+        const result = reducers.SET_SCORE(state, { score: 42 })
+        expect(result.score).toBe(42)
+    })
+
+    it("preserves other state fields", () => {
+        const state = { ...createInitialGameState(), phase: "playing" }
+        const result = reducers.SET_SCORE(state, { score: 100 })
+        expect(result.phase).toBe("playing")
+    })
+})
+
+describe("SET_PHASE", () => {
+    it("transitions to the target phase", () => {
+        const state = createInitialGameState()
+        const result = reducers.SET_PHASE(state, { phase: "categorySelect" })
+        expect(result.phase).toBe("categorySelect")
+    })
+})
+```
+
+### Thunk Tests with Mocked Context
+
+Create a mock `IThunkContext` to test thunks in isolation:
+
+```typescript
+// __tests__/helpers/mockThunkContext.ts
+import type { YourGameState } from "@your-game/shared"
+
+export function createMockThunkContext(initialState: YourGameState) {
+    let state = { ...initialState }
+    const dispatches: Array<{ reducer: string; args: unknown }> = []
+    const thunkDispatches: Array<{ thunk: string; args: unknown }> = []
+
+    return {
+        ctx: {
+            getState: () => state,
+            getSessionId: () => "test-session",
+            getClientId: () => "test-client",
+            dispatch: (reducerName: string, args: unknown) => {
+                dispatches.push({ reducer: reducerName, args })
+                // Optionally apply the reducer to update state
+            },
+            dispatchThunk: async (thunkName: string, args: unknown) => {
+                thunkDispatches.push({ thunk: thunkName, args })
+            },
+            getMembers: () => ({}),
+            scheduler: {
+                upsertTimeout: async () => {},
+                cancel: async () => {},
+                pause: async () => {},
+                resume: async () => {},
+            },
+            sessionManager: { kickClient: () => {} },
+            logger: { info: () => {}, error: () => {} },
+        },
+        dispatches,
+        thunkDispatches,
+    }
+}
+```
+
+```typescript
+// __tests__/thunks.test.ts
+import { describe, it, expect } from "vitest"
+import { createProcessTranscriptionThunk } from "../src/thunks/processTranscription"
+import { createMockThunkContext } from "./helpers/mockThunkContext"
+import { createInitialGameState } from "@your-game/shared"
+
+describe("PROCESS_TRANSCRIPTION", () => {
+    const mockServices = {
+        waterfall: {
+            match: (text: string, targets: string[]) => ({
+                foundMatch: targets.includes(text.toLowerCase()),
+                confidence: 1,
+                matchedAnswer: text,
+            }),
+        },
+        // ... other stubbed services
+    }
+
+    it("dispatches SET_SCORE on correct answer", async () => {
+        const state = {
+            ...createInitialGameState(),
+            phase: "playing",
+            quizSubState: "QUESTION",
+        }
+        const { ctx, dispatches } = createMockThunkContext(state)
+        const thunk = createProcessTranscriptionThunk(mockServices as any)
+
+        await thunk(ctx as any)
+
+        expect(dispatches).toContainEqual(
+            expect.objectContaining({ reducer: "SET_SCORE" }),
+        )
+    })
+})
+```
+
+### Phase Transition Tests
+
+Test `endIf` conditions and `next` routing as pure logic:
+
+```typescript
+describe("phase transitions", () => {
+    it("lobby ends when controller connects", () => {
+        const phases = createPhases(mockServices)
+        const state = { ...createInitialGameState(), controllerConnected: true }
+        const ctx = { session: { state } }
+
+        expect(phases.lobby.endIf(ctx as any)).toBe(true)
+    })
+
+    it("lobby routes FTUE users to playing", () => {
+        const phases = createPhases(mockServices)
+        const state = { ...createInitialGameState(), isFtue: true }
+        const ctx = { session: { state } }
+        const nextFn = phases.lobby.next as (ctx: any) => string
+
+        expect(nextFn(ctx as any)).toBe("playing")
+    })
+})
+```
+
+### Client Component Tests
+
+For React components that use WGF hooks, mock the VGFProvider:
+
+```typescript
+// __tests__/helpers/MockVGFProvider.tsx
+import { VGFProvider } from "@volley/vgf/client"
+
+// Use createMockTransport (Section 18.4) for component tests
+export function MockVGFProvider({
+    children,
+    initialState,
+}: {
+    children: React.ReactNode
+    initialState: YourGameState
+}) {
+    const transport = createMockTransport()
+    return (
+        <VGFProvider transport={transport} clientOptions={{ autoConnect: false }}>
+            {children}
+        </VGFProvider>
+    )
+}
+```
+
+### What to Test (Checklist)
+
+| Layer | What to Test | How |
+|-------|-------------|-----|
+| Reducers | State transitions are correct | Pure function unit tests |
+| Thunks | Side effects, dispatches, error handling | Mock context |
+| Phase `endIf` | Transition conditions | Pure function unit tests |
+| Phase `next` | Routing logic | Pure function unit tests |
+| `onBegin` / `onEnd` | Lifecycle setup/teardown | Mock context |
+| Client components | Rendering per state | Mock VGFProvider |
+| Multi-client | Full flow (display + controller) | `vgf multi-client` (Section 20) |
+
+---
+
+## 24. Reconnection Handling
+
+Real TV devices lose WiFi, phone screens lock, and WebSocket connections drop. WGF handles reconnection automatically but you need to understand the flow to build resilient UIs.
+
+### WebSocket Handshake Lifecycle
+
+When a client connects, WGF validates the handshake query parameters:
+
+1. **Validation:** Checks `sessionId`, `userId`, `clientType` are present. Optional: `sessionMemberStateJson`.
+2. **Session lookup:** Loads the session from storage. Throws `SessionNotFoundError` if missing.
+3. **New vs reconnection:** Checks if a `SessionMember` with the same `userId` already exists in the session.
+   - **New connection:** Creates a new `SessionMember` with `connectionState: Connected`, `isReady: false`.
+   - **Reconnection:** Updates the existing member's `connectionId` and sets `connectionState: Connected`. Player state (ready status, custom data) is preserved.
+4. **Room join:** Registers the socket and joins the session's Socket.IO room.
+
+### Connection States
+
+```typescript
+enum ConnectionState {
+    Connected = "Connected",
+    Disconnected = "Disconnected",
+}
+```
+
+A `SessionMember` with `connectionState: Disconnected` is a player who was in the session but whose WebSocket dropped. They are **not** removed from the session — their membership persists until explicitly kicked or the session ends.
+
+### Client-Side: useConnectionStatus
+
+```typescript
+const connectionStatus = useConnectionStatus()
+// Returns: "connected" | "disconnected" | "reconnecting"
+
+function ConnectionBanner() {
+    const status = useConnectionStatus()
+
+    if (status === "reconnecting") {
+        return <div className="banner warning">Reconnecting...</div>
+    }
+    if (status === "disconnected") {
+        return <div className="banner error">Connection lost</div>
+    }
+    return null
+}
+```
+
+### Server-Side: onDisconnect Timing
+
+When a client disconnects, `onDisconnect` fires but **the session continues**. Common patterns:
+
+```typescript
+export function createOnDisconnect(services: GameServices) {
+    return async (ctx: LifecycleContext) => {
+        const { clientType, userId } = ctx.connection.metadata
+
+        if (clientType === "CONTROLLER") {
+            // Option A: Pause the game, wait for reconnection
+            ctx.dispatch("SET_PAUSED", { paused: true, reason: "Player disconnected" })
+
+            // Option B: Start a timeout — if they don't reconnect, end the game
+            await ctx.scheduler.upsertTimeout({
+                name: `disconnect-timeout-${userId}`,
+                duration: 30000,
+                thunkName: "HANDLE_PLAYER_ABANDON",
+                args: { userId },
+            })
+        }
+    }
+}
+
+export function createOnConnect(services: GameServices) {
+    return async (ctx: LifecycleContext) => {
+        const { clientType, userId } = ctx.connection.metadata
+
+        if (clientType === "CONTROLLER") {
+            // Cancel the abandon timeout on reconnection
+            await ctx.scheduler.cancel(`disconnect-timeout-${userId}`)
+
+            // Resume if we paused
+            const state = ctx.getState()
+            if (state.paused) {
+                ctx.dispatch("SET_PAUSED", { paused: false, reason: null })
+            }
+        }
+    }
+}
+```
+
+### Error Types
+
+| Error | Cause |
+|-------|-------|
+| `WebSocketHandshakeError` | Missing or invalid `sessionId`, `userId`, or `clientType` in query params |
+| `SessionNotFoundError` | Session doesn't exist in storage (expired, deleted, or wrong ID) |
+| `SocketNotFoundInRegistryError` | Internal: socket not tracked after connection (bug or race condition) |
+
+### Resilience Checklist
+
+- [ ] Display shows connection status banner using `useConnectionStatus()`
+- [ ] Controller handles reconnection gracefully (doesn't reset local UI on reconnect)
+- [ ] Server `onDisconnect` starts a timeout rather than immediately ending the game
+- [ ] Server `onConnect` cancels disconnect timeouts for reconnecting players
+- [ ] Session members are checked by `connectionState` before dispatching player-specific actions
+
+---
+
+## 25. Observability
+
+Production games need structured logging, metrics, and tracing. WGF integrates with `@volley/logger` and provides hooks for both server and client instrumentation.
+
+### Server-Side Logging
+
+Use `@volley/logger` — never raw `pino` or `console.log` in production:
+
+```typescript
+import { createLogger, createLoggerHttpMiddleware } from "@volley/logger"
+
+const logger = createLogger({
+    name: "your-game-server",
+    level: process.env.LOG_LEVEL ?? "info",
+})
+
+// HTTP request logging with UUID correlation
+const app = express()
+app.use(createLoggerHttpMiddleware(logger))
+```
+
+Every log line includes a request UUID for tracing across service boundaries.
+
+### Thunk Context Logging
+
+Thunks receive a scoped logger via `ctx.logger`:
+
+```typescript
+export function createProcessTranscriptionThunk(services: GameServices) {
+    return async (ctx: IThunkContext<YourGameState>) => {
+        ctx.logger.info({ text: args.text }, "Processing transcription")
+
+        try {
+            const result = services.waterfall.match(args.text, targets, 0.7)
+            ctx.logger.info({ result }, "Waterfall match result")
+        } catch (err) {
+            ctx.logger.error({ err }, "Transcription processing failed")
+            services.datadog.captureError(err, {
+                sessionId: ctx.getSessionId(),
+                clientId: ctx.getClientId(),
+            })
+        }
+    }
+}
+```
+
+### Client-Side Event Logging
+
+Use the `useEvents` hook to emit structured log events from the client:
+
+```typescript
+const events = useEvents()
+
+// Log a game event
+events.emit("game:answer_submitted", {
+    phase: "playing",
+    questionIndex: 3,
+    answerText: "elephant",
+    responseTimeMs: 2340,
+})
+```
+
+### Datadog Transport Middleware
+
+For Socket.IO instrumentation (connection counts, message latency):
+
+```typescript
+import { createDatadogTransportMiddleware } from "@volley/vgf/server"
+
+const io = new SocketIOServer(httpServer, { /* ... */ })
+
+// Track connection/disconnection events and message throughput
+io.use(createDatadogTransportMiddleware({
+    serviceName: "your-game-server",
+    statsdClient: ddStatsd,
+}))
+```
+
+### Event History (Debugging)
+
+WGF supports optional event history recording for debugging state issues:
+
+```typescript
+import { FileEventHistory, MetricEventHistory } from "@volley/vgf/server"
+
+// Write all state events to a file (dev only — generates large files)
+const eventHistory = new FileEventHistory("./events.log")
+
+// Or track event metrics without storing payloads (production-safe)
+const eventHistory = new MetricEventHistory(ddStatsd)
+
+const server = new WGFServer({
+    // ... other options
+    eventHistory,
+})
+```
+
+### Key Metrics to Track
+
+| Metric | What It Tells You |
+|--------|------------------|
+| Active WebSocket connections | Current load, detect connection leaks |
+| Active sessions | Game utilisation |
+| Thunk execution latency | Performance bottlenecks (especially API-calling thunks) |
+| Reducer dispatch rate | State update frequency (too high = potential spam) |
+| Redis operation latency | Storage backend health |
+| Reconnection rate | Network stability for TV devices |
+| Player join → first action time | Onboarding friction |
+
+### Structured Log Fields
+
+Follow these conventions for searchable logs:
+
+```typescript
+// Always include sessionId and clientId in game-context logs
+ctx.logger.info({
+    sessionId: ctx.getSessionId(),
+    clientId: ctx.getClientId(),
+    phase: ctx.getState().phase,
+    action: "PROCESS_TRANSCRIPTION",
+    text: args.text,
+    matchResult: result.foundMatch,
+}, "Transcription processed")
 ```
 
