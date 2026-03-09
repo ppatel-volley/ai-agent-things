@@ -1,6 +1,8 @@
 # Ouroboros Import Report
 
 > **What useful elements from `/Users/pratik/dev/ouroboros` could strengthen the agent guidelines in this repo?**
+>
+> **Last updated:** 2026-03-09 — ouroboros v0.20.0
 
 ## Executive Summary
 
@@ -8,13 +10,31 @@ Ouroboros is a specification-first AI workflow system built around an evolutiona
 
 The two are highly complementary. The biggest wins come from importing ouroboros' **pre-coding discipline** (Socratic interviewing, ambiguity scoring) and **cognitive mode personas** (thinking strategies that work in single-agent or multi-agent contexts).
 
+### Changes Since Previous Report
+
+Ouroboros has matured significantly. Key changes:
+
+| Area | What Changed |
+|------|-------------|
+| **Version** | Now v0.20.0 with consistent versioning across plugin.json, pyproject.toml |
+| **Skills** | Grew from 4 referenced skills to **13**: added `welcome`, `seed`, `run`, `evolve`, `ralph`, `setup`, `tutorial`, `help`, `update` |
+| **Ralph loop** | New persistent self-referential execution loop with QA verdict integration, parallel execution, and git branch detection (see new Import #10 below) |
+| **Plugin system** | Full `.claude-plugin/` packaging: `plugin.json`, `marketplace.json`, `.mcp.json` — marketplace-ready |
+| **Hooks** | Added `SessionStart` hook (`session-start.py`) alongside existing keyword-detector and drift-monitor |
+| **Git workflow detection** | CLAUDE.md now parses for git/PR workflows; `ralph` and `run` skills adapt behaviour for PR-based projects |
+| **Agent SDK** | New dependency: `claude-agent-sdk>=0.1.0` (Anthropic's Agent SDK) |
+| **Stagnation** | `evolve` skill now has explicit Wonder→Reflect stagnation loop breaking (validates Import #4) |
+| **Ambiguity default** | Default ambiguity score lowered from threshold 0.2 to default 0.15, documented in seed skill |
+| **Self-update** | `ooo update` command with PyPI version check and SSL fallback |
+| **TUI monitoring** | Real-time Textual-based monitoring with alias support |
+
 ---
 
 ## High-Value Imports
 
 ### 1. Specialised Cognitive Modes (Agent Personas)
 
-**What ouroboros has:** 9 agent roles, each embodying a distinct reasoning strategy — not just job titles but explicit thinking methodologies with prescribed questions, boundaries, and output formats.
+**What ouroboros has:** 10 agent roles (9 listed in CLAUDE.md + qa-judge), each embodying a distinct reasoning strategy — not just job titles but explicit thinking methodologies with prescribed questions, boundaries, and output formats.
 
 **Why it matters:** ai-agent-things has multi-agent orchestration (worktrees, task coordination, integration verification) but no defined *cognitive strategies* for agents to adopt. The infrastructure is there; the thinking modes are missing.
 
@@ -109,13 +129,17 @@ Stage 3 only triggers when: Stage 2 < 0.8, high ambiguity detected, or manual re
 
 ### 6. Drift Monitoring via Claude Code Hooks
 
-**What ouroboros has:** Hooks configured in `.claude/settings.json`:
-- `UserPromptSubmit` hook: keyword detection for routing
-- `PostToolUse` hook on `Write|Edit`: checks whether file changes drift from the specification
+**What ouroboros has:** Three hook points configured in `.claude/settings.json` and `hooks/hooks.json`:
+- `SessionStart` hook: runs `session-start.py` to initialise session state
+- `UserPromptSubmit` hook: runs `keyword-detector.py` for `ooo` command routing (5s timeout)
+- `PostToolUse` hook on `Write|Edit` matcher: runs `drift-monitor.py` to check whether file changes drift from the specification (3s timeout)
+
+Each hook is a lightweight Python script with a hard timeout — they fire automatically and fail silently if they exceed the limit.
 
 **Why it matters:** ai-agent-things has no hooks. This is a practical enforcement mechanism — rather than relying on the agent to self-police (which degrades over long sessions due to context rot), hooks provide external guardrails that fire automatically.
 
 **Suggested integration:** Consider adding hooks for:
+- Session start: log session context, load relevant memory files
 - Post-edit check: "Does this change match the task described in tasks/todo.md?"
 - Pre-commit check: "Did verification block pass?"
 - These would be project-specific, so perhaps document the *pattern* in AGENTS.md and let AGENTS-PROJECT.md define specific hooks.
@@ -133,6 +157,55 @@ Stage 3 only triggers when: Stage 2 < 0.8, high ambiguity detected, or manual re
 **Why it matters:** ai-agent-things already has strong general guidance, but it is mostly passive documentation. Ouroboros turns guidance into *entry points* that are easier to invoke consistently. This is especially useful for recurring workflows like clarification, drift checks, and "I'm stuck" recovery.
 
 **Suggested integration:** Don't copy the whole command surface, but do copy the pattern. A small set of named workflow wrappers for "clarify", "unstuck", and "evaluate" would make the current guidance easier to operationalize than keeping everything inside one giant handbook.
+
+---
+
+### NEW: 10. Self-Referential QA Loop (Ralph Pattern)
+
+**What ouroboros has:** A persistent execution loop (`skills/ralph/SKILL.md`) that:
+1. Executes a task
+2. Runs the QA Judge agent against the output
+3. If the QA verdict is below threshold, feeds the verdict back as input and re-executes
+4. Supports parallel execution of independent sub-tasks
+5. Detects git branch context and adapts (PR-based projects get branch-aware behaviour)
+6. Has explicit rewind capability (`ralph-rewind.py`) for rolling back failed iterations
+
+The QA Judge (`agents/qa-judge.md`) scores on 5 dimensions: Correctness, Completeness, Quality, Intent Alignment, and Domain-Specific criteria. Output is a structured verdict with score, differences, suggestions, and loop action (continue/stop/rewind).
+
+**Why it matters:** ai-agent-things has verification (tests pass/fail) but no *iterative self-correction loop*. The Ralph pattern is essentially: "run, judge, fix, repeat" with structured feedback between iterations. This is more sophisticated than "retry on failure" — the QA verdict tells the next iteration *what specifically* to fix.
+
+**Suggested integration:** This is heavier than the other imports — it requires a QA judge definition and a loop controller. Worth documenting as a pattern for Critical-mode tasks:
+- After implementing, run a structured self-review with explicit scoring dimensions
+- If score < threshold, iterate with the review as context (not just "try again")
+- Cap iterations (ouroboros uses the 30-generation hard cap from the evolve skill)
+- The 5-dimension scoring framework (Correctness, Completeness, Quality, Intent Alignment, Domain-Specific) could be added to the Semantic Verification step (Import #5)
+
+**Source files:** `skills/ralph/SKILL.md`, `agents/qa-judge.md`, `scripts/ralph.py`, `scripts/ralph-rewind.py`
+
+---
+
+### NEW: 11. Git Workflow Detection
+
+**What ouroboros has:** CLAUDE.md parsing logic that detects whether a project uses git/PR workflows, and adapts skill behaviour accordingly. The `ralph` and `run` skills check for branch context and adjust — e.g. creating feature branches, structuring commits for PR review.
+
+**Why it matters:** ai-agent-things has multi-agent coordination via worktrees but doesn't auto-detect the project's git workflow conventions. Adding detection (main-only vs feature-branch vs PR-based) would let the guidelines adapt automatically.
+
+**Suggested integration:** Low effort — add a note to AGENTS-PROJECT.md suggesting projects declare their git workflow, and let agents adapt commit/branch behaviour accordingly.
+
+---
+
+### NEW: 12. Skill-as-Plugin Distribution Pattern
+
+**What ouroboros has:** A full plugin packaging system in `.claude-plugin/`:
+- `plugin.json`: name, version, description, skill directory path, MCP server reference
+- `marketplace.json`: marketplace schema compliance with tags and categories
+- `.mcp.json`: simplified MCP server config for installed plugin context
+
+Skills are self-contained in `skills/{name}/SKILL.md` with consistent structure: trigger keywords, MCP vs fallback mode, agent/tool to use, response format, next-step guidance.
+
+**Why it matters:** ai-agent-things already has skills (clarify, unstuck, simplify) defined in AGENTS.md. Ouroboros shows how to package these for reuse across projects. The pattern is: each skill is a standalone file with a consistent interface, discovered by a router (CLAUDE.md), and distributable via a plugin manifest.
+
+**Suggested integration:** Medium effort. If the skills in ai-agent-things grow beyond 5-6, consider extracting them into `skills/{name}/SKILL.md` files with a manifest. For now, documenting the pattern is sufficient — the current inline approach works at small scale.
 
 ---
 
@@ -160,8 +233,9 @@ Stage 3 only triggers when: Stage 2 < 0.8, high ambiguity detected, or manual re
 
 ## Verified Caveats
 
-- `ouroboros/CLAUDE.md` is directionally accurate, but at least one command reference appears stale: it mentions `skills/qa/SKILL.md`, while that file is not present in the checked-out repo. Import the pattern, not the exact file list.
+- ~~`ouroboros/CLAUDE.md` is directionally accurate, but at least one command reference appears stale: it mentions `skills/qa/SKILL.md`, while that file is not present in the checked-out repo.~~ **Update (v0.20.0):** CLAUDE.md has been overhauled. The stale `skills/qa/SKILL.md` reference appears to have been removed. The command routing table now maps to 13 verified skill files. Import the pattern, not the exact file list — but the list is now reliable.
 - The repo contains both top-level `agents/*.md` files and mirrored `src/ouroboros/agents/*.md` files. For this report, I treated the top-level `agents/` files as the human-facing source of truth because that is what `CLAUDE.md` points to.
+- **New caveat:** ouroboros now depends on `claude-agent-sdk>=0.1.0` (Anthropic's Agent SDK). This suggests the project may be moving towards programmatic agent orchestration beyond prompt-based workflows. The agent definitions in `agents/*.md` may increasingly serve as documentation for SDK-driven agents rather than prompt-only personas. Monitor this — if the SDK becomes the primary execution path, the personas become less directly importable as prompt instructions.
 
 ---
 
@@ -173,7 +247,7 @@ These are ouroboros-specific and don't generalise well:
 |---------|---------------|
 | Event Sourcing architecture | Domain-specific to ouroboros' evolutionary loop |
 | Python 3.14+ / async-I/O rules | Wrong language stack |
-| Plugin system / MCP server config | Specific to ouroboros distribution model |
+| Plugin system / MCP server config | Now a full `.claude-plugin/` packaging system with marketplace.json — more mature than before, but still specific to ouroboros' distribution model. The *pattern* of skill packaging is worth noting (see Import #12) even if the implementation isn't transferable |
 | Seed specification format (YAML) | Specific to ouroboros' interview-to-spec pipeline |
 | Ontology convergence formula | Only relevant for evolutionary/iterative spec refinement |
 | Double Diamond design process | Interesting but heavyweight; the useful parts (diverge then converge) are simpler to express as a guideline |
@@ -207,21 +281,25 @@ If importing, I'd suggest this order:
 
 3. **Ambiguity Scoring / Pre-coding Gate** (High impact, low effort) — 3-question checklist for Standard/Critical modes. Another quick win.
 
-4. **Stagnation/Oscillation Detection** (Medium impact, low effort) — 3 bullet points in the Recovery Path section.
+4. **Stagnation/Oscillation Detection** (Medium impact, low effort) — 3 bullet points in the Recovery Path section. *Note: ouroboros v0.20.0 now has explicit Wonder→Reflect stagnation breaking in the evolve skill, validating this recommendation.*
 
-5. **Semantic Verification Step** (Medium impact, low effort) — One additional line in the verification block for Standard/Critical.
+5. **Semantic Verification Step** (Medium impact, low effort) — One additional line in the verification block for Standard/Critical. Consider adding the QA Judge's 5-dimension scoring framework (Correctness, Completeness, Quality, Intent Alignment, Domain-Specific).
 
-6. **Hooks Pattern** (Medium impact, moderate effort) — Document the pattern; actual hooks are project-specific.
+6. **Hooks Pattern** (Medium impact, moderate effort) — Document the pattern; actual hooks are project-specific. Ouroboros now has 3 concrete hook examples (session-start, keyword-detector, drift-monitor) with timeouts — good reference implementations.
 
-7. **Named Workflow Wrappers** (Medium impact, moderate effort) — Optional after the core handbook changes. Add a small set of entry points for repeated flows like clarification, drift checks, and recovery when stuck.
+7. **Named Workflow Wrappers** (Medium impact, moderate effort) — Optional after the core handbook changes. Add a small set of entry points for repeated flows like clarification, drift checks, and recovery when stuck. Ouroboros now has 13 skills showing the full pattern.
 
-Items 1-5 could be done in a single editing pass to AGENTS.md. Items 6-7 are follow-on operational improvements. Total addition for the handbook-only changes: roughly 80-120 lines.
+8. **Self-Referential QA Loop** (Medium impact, high effort) — For Critical-mode tasks, add an iterative self-correction pattern based on the Ralph loop: execute → judge → fix → repeat with structured feedback. Most valuable for complex, multi-file changes.
+
+Items 1-5 could be done in a single editing pass to AGENTS.md. Items 6-8 are follow-on operational improvements. Total addition for the handbook-only changes: roughly 80-120 lines.
 
 ---
 
 ## Source File Reference
 
-Key ouroboros files for reference during import:
+Key ouroboros files for reference during import (updated for v0.20.0):
+
+### Agents (10 files in `agents/`)
 
 | File | Content |
 |------|---------|
@@ -229,14 +307,44 @@ Key ouroboros files for reference during import:
 | `agents/simplifier.md` | Complexity reduction heuristics |
 | `agents/researcher.md` | Evidence-based investigation protocol |
 | `agents/architect.md` | Structural diagnosis and redesign |
-| `agents/ontologist.md` | Fundamental nature analysis |
+| `agents/ontologist.md` | Fundamental nature analysis (4 questions: essence, root cause, prerequisites, hidden assumptions) |
 | `agents/hacker.md` | Constraint questioning and bypass strategies |
-| `agents/socratic-interviewer.md` | Requirements elicitation protocol |
-| `agents/evaluator.md` | 3-stage evaluation pipeline |
-| `agents/qa-judge.md` | Quality assessment framework |
-| `skills/interview/SKILL.md` | Structured interview flow, including suggested answers and fallback behavior |
-| `skills/unstuck/SKILL.md` | Persona router for stagnation recovery |
-| `skills/evaluate/SKILL.md` | Operational wrapper around the evaluator pipeline |
-| `skills/status/SKILL.md` | Drift checks and session-status thresholds |
-| `README.md` | Ambiguity scoring formula, thresholds, and system-level concepts |
-| `.claude/settings.json` | Hook configuration example |
+| `agents/socratic-interviewer.md` | Requirements elicitation protocol (strict tool boundaries: CAN Read/Glob/Grep, CANNOT Write/Edit/Bash) |
+| `agents/seed-architect.md` | Interview → Seed spec transformer (YAML output, ambiguity validation) |
+| `agents/evaluator.md` | 3-stage evaluation pipeline (Mechanical → Semantic → Consensus) |
+| `agents/qa-judge.md` | 5-dimension quality assessment (Correctness, Completeness, Quality, Intent Alignment, Domain-Specific) |
+
+### Skills (13 files in `skills/*/SKILL.md`)
+
+| File | Content |
+|------|---------|
+| `skills/welcome/SKILL.md` | First-touch onboarding, persona detection, MCP check |
+| `skills/interview/SKILL.md` | Socratic interview with version check, MCP/fallback modes |
+| `skills/seed/SKILL.md` | Generate Seed specs from interview, ambiguity validation, star question |
+| `skills/run/SKILL.md` | Execute Seed through workflow engine, git workflow detection |
+| `skills/evaluate/SKILL.md` | 3-stage evaluation wrapper, MCP tool invocation |
+| `skills/evolve/SKILL.md` | Evolutionary loop with Wonder/Reflect, convergence detection, 30-gen cap |
+| `skills/ralph/SKILL.md` | Persistent QA loop with parallel execution, git branch detection, rewind |
+| `skills/unstuck/SKILL.md` | 5-persona lateral thinking router (hacker, researcher, simplifier, architect, contrarian) |
+| `skills/status/SKILL.md` | Session status + drift measurement (0.3 threshold) |
+| `skills/setup/SKILL.md` | MCP registration, CLAUDE.md integration, 6-step wizard |
+| `skills/tutorial/SKILL.md` | Interactive hands-on learning, 6 phases, progressive disclosure |
+| `skills/help/SKILL.md` | Command reference, natural language triggers, agent catalogue |
+| `skills/update/SKILL.md` | PyPI version check, automatic plugin/package upgrade |
+
+### Infrastructure
+
+| File | Content |
+|------|---------|
+| `CLAUDE.md` | Command routing table, agent references, development mode docs (v0.20.0) |
+| `README.md` | Ambiguity scoring formula, ontology convergence, 9-agent framework docs |
+| `.claude/settings.json` | Hook configuration (UserPromptSubmit + PostToolUse with timeouts) |
+| `hooks/hooks.json` | 3 hook definitions (SessionStart, UserPromptSubmit, PostToolUse) |
+| `scripts/keyword-detector.py` | `ooo` command routing from user input |
+| `scripts/drift-monitor.py` | Goal drift detection on Write/Edit operations |
+| `scripts/session-start.py` | Session state initialisation |
+| `scripts/ralph.py` | Ralph loop orchestration |
+| `scripts/ralph-rewind.py` | Ralph iteration rollback |
+| `.claude-plugin/plugin.json` | Plugin metadata and skill directory mapping |
+| `.claude-plugin/marketplace.json` | Marketplace schema with tags and categories |
+| `pyproject.toml` | Dependencies including `claude-agent-sdk>=0.1.0`, `litellm>=1.80.0` |
