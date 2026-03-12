@@ -245,7 +245,8 @@ In these cases, reduce your initial confidence estimate by 0.2 and verify explic
 
 1. Identify the weakest link — what specific artifact is missing or failing?
 2. Try a different approach OR ask for the missing info
-3. **Hard cap — 4 total attempts** on the same sub-problem. If you hit 4, escalate to user with a structured blocker report (§7).
+3. If Quick-mode attempt fails twice, consider upgrading to Standard. If Standard fails twice, consider Critical. Escalation is cheaper than spinning.
+4. **Hard cap — 4 total attempts** on the same sub-problem. If you hit 4, escalate to user with a structured blocker report (§7).
 
 **Detect pathological loops** (these fire before the hard cap):
 - **Oscillation** — After 2 failed attempts, check: "Am I reverting changes from the previous attempt?" If yes, you're flip-flopping between two broken states. Stop and reframe the problem entirely.
@@ -260,9 +261,10 @@ In these cases, reduce your initial confidence estimate by 0.2 and verify explic
 
 For Critical-mode tasks, after the initial implementation passes the Verification Block:
 
-1. **Self-review** — Score the implementation against the 3 semantic dimensions (correctness, completeness, intent alignment). Be honest — passing tests doesn't mean the approach is right.
-2. **If any dimension scores below "confident"** — Write a structured critique: what's wrong, what specifically needs to change, and why. Then iterate with that critique as context.
-3. **Cap at 2 self-correction iterations.** If the third pass still has concerns, escalate to the user with a structured comparison of what you tried.
+1. **Verification completeness check** — Before scoring, confirm that all verification steps actually ran and passed. If any step was skipped or errored (e.g., tests not found, build step omitted, type check not run), you cannot declare success. Fix the verification gap first.
+2. **Self-review** — Score the implementation against the 3 semantic dimensions (correctness, completeness, intent alignment). Be honest — passing tests doesn't mean the approach is right.
+3. **If any dimension scores below "confident"** — Write a structured critique: what's wrong, what specifically needs to change, and why. Then iterate with that critique as context.
+4. **Cap at 2 self-correction iterations.** If the third pass still has concerns, escalate to the user with a structured comparison of what you tried.
 
 This is not the same as the Recovery Path above (which handles failures). This handles code that *works* but may not be *right*. Use `/review` (§11) to run this as a structured workflow.
 

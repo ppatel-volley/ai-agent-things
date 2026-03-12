@@ -53,9 +53,11 @@ The entry point (`CLAUDE.md` / `.cursorrules`) directs the agent to read the fra
 ├── AGENTS.md              # Core guidelines (start here)
 ├── AGENTS-PROJECT.md      # Project-specific config (customise this)
 ├── AGENTS-REACT-TS.md     # Language/framework patterns (swap for your stack)
+├── AGENTS-THREEJS.md      # Three.js / WebGL patterns (load for 3D tasks)
 ├── AGENTS-RLM.md          # Large context handling (>100K tokens)
 └── skills/                # Reusable workflow scripts (invoked by command)
     ├── clarify/SKILL.md   # Structured requirements interview
+    ├── review/SKILL.md    # Structured self-evaluation (Critical mode)
     └── unstuck/SKILL.md   # Lateral thinking modes for stagnation
 ```
 
@@ -85,8 +87,10 @@ The heart of the system. Eleven sections covering everything from mandatory veri
 
 **Sections 4–7: Quality Controls**
 
-- **Pre-Completion Checklist** — Eight items the agent must verify before claiming work is done, including "Would a staff engineer approve this?"
-- **Confidence Calibration** — A defined scale from 0.0 to 1.0 with explicit actions at each level. Below 0.5 means stop and ask for clarification.
+- **Pre-Completion Checklist** — Ten items the agent must verify before claiming work is done, including hard gates on type checking and builds (not just tests).
+- **Confidence Calibration** — A defined scale from 0.0 to 1.0 with explicit actions at each level. Below 0.5 means stop and ask for clarification. Includes auto-escalation: if Quick-mode fails twice, upgrade to Standard.
+- **Self-Correction Loop** — For Critical-mode tasks: verify that all verification steps actually ran (no skipped checks), score against semantic dimensions, iterate with structured critique if needed. Capped at 2 iterations.
+- **Recovery Path** — Pathological loop detection: oscillation (flip-flopping between broken states), stagnation (same errors repeating), and analysis paralysis (Wonder→Reflect loops). Hard cap at 4 attempts.
 - **Meta-Cognitive Process** — For complex tasks: Decompose, Solve, Verify, Synthesise, Reflect.
 - **Thinking Modes** — Six cognitive lenses (Contrarian, Simplifier, Researcher, Architect, Ontologist, Hacker) for when standard decomposition isn't cutting it. Each reframes the problem through a different perspective, with a routing heuristic to pick the right one.
 - **Communication Style** — Concise, no filler, explicit about assumptions and risks.
@@ -136,6 +140,7 @@ Skills are invoked by explicit command. They provide structured workflows for si
 |---------|-------------|
 | `/clarify` | Runs a structured requirements interview when the task is ambiguous. The agent adopts an interviewer role, targets the biggest ambiguity, and presents options rather than open-ended questions. Ends with a bullet-point summary before proceeding. |
 | `/unstuck` | Routes into a Thinking Mode based on the type of block. Repeated failures → Contrarian, too many options → Simplifier, missing info → Researcher, structural issues → Architect, analysis paralysis → Hacker, vague requirements → Ontologist. |
+| `/review` | Structured self-evaluation for Critical-mode tasks. Checks verification completeness, scores against semantic dimensions (correctness, completeness, intent alignment), and iterates with structured critique if needed. |
 
 Skills live in `skills/*/SKILL.md` and are referenced from `AGENTS.md` §11. Add your own by creating a new directory under `skills/` with a `SKILL.md` file.
 
@@ -148,8 +153,11 @@ A template you fill in with your project's specifics:
 - **Commands** — test, typecheck, build, and dev commands
 - **Test locations** — where tests live in your directory structure
 - **Keyword triggers** — domain keywords (e.g., "auth", "database", "api") mapped to relevant learnings
-- **Task type categories** — quick lookup from task type to relevant past lessons
-- **Verification block template** — pre-filled with your project's actual commands
+- **Git workflow** — declare trunk-based, feature-branch, or PR-required so agents adapt their branching and commit behaviour
+- **Hooks** — optional Claude Code hooks for automatic guardrails (session start, keyword routing, drift detection on file edits)
+- **Commit guidelines** — conventional commit format, attribution rules
+- **Dependencies** — rules for adding/updating packages
+- **Learnings system** — how to document and index mistakes for future reference
 
 ---
 
@@ -236,6 +244,9 @@ The framework is built around mitigating these documented failure patterns:
 | Framing sensitivity | Medium | Restructure approach if output is off (§8.6) |
 | Reversal curse | Medium in complex context | State relationships bidirectionally (§8.6) |
 | Multi-agent coordination | High if parallelising | Human review gates, no auto-merge (§9) |
+| Dependency hallucination | High for real-world code | Read actual interfaces before using; never assume API shapes (§8.15) |
+| Synthetic benchmark overconfidence | High for self-assessment | Reduce confidence by 0.2 for cross-dependency code (§5) |
+| Type system blindness | High for complex codebases | Verify types at every boundary, especially inheritance chains (§8.15) |
 
 ---
 

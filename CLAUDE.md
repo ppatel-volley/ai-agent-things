@@ -22,4 +22,9 @@ Read and follow the guidelines in these files before starting any task:
 These files contain mandatory requirements for code changes, testing, and verification. Read the first three sections of AGENTS.md completely before writing any code.
 
 **Conditional reading (load only when needed):**
+- **[AGENTS-THREEJS.md](./AGENTS-THREEJS.md)** — Read ONLY for 3D/WebGL tasks using Three.js, shaders, or React Three Fiber.
 - **[AGENTS-RLM.md](./AGENTS-RLM.md)** — Read ONLY when context exceeds ~100K tokens or task requires processing most/all of a large input. Not needed for typical tasks.
+
+## Maintenance
+
+**README sync:** When adding or removing features from any agent file (`AGENTS.md`, `AGENTS-PROJECT.md`, skills, etc.), update `README.md` to reflect the change. The README is the public-facing documentation — it must stay current with the framework's actual capabilities.
