@@ -25,7 +25,7 @@
 4. Check [`learnings/INDEX.md`](./learnings/INDEX.md) before starting work (if it exists)
 5. See [`AGENTS-RLM.md`](./AGENTS-RLM.md) only when context exceeds ~100K tokens
 
-> **Context budget note:** This document is ~680 lines. For **Quick-mode** tasks, sections 1–3 plus the execution mode table are sufficient (~130 lines). Sections 4–10 add value primarily for Standard/Critical tasks. Skim or skip appendices unless referenced.
+> **Context budget note:** This document is ~720 lines. For **Quick-mode** tasks, sections 1–3 plus the execution mode table are sufficient (~140 lines). Sections 4–10 add value primarily for Standard/Critical tasks. Skim or skip appendices unless referenced.
 
 ### Execution Modes
 
@@ -75,6 +75,10 @@ Import project and language-specific guidelines as needed:
 - Types: [PASSED/FAILED] — `pnpm typecheck` (**MANDATORY** — vitest does NOT check types)
 - Build: [PASSED/FAILED] — `pnpm build` (**MANDATORY** — must produce shippable artifact)
 - New tests added: [YES - describe / NO - justify]
+- Semantic check:
+  - Correctness: [Does it do what was asked? YES/NO]
+  - Completeness: [All requirements addressed? YES/partial — what's missing]
+  - Intent alignment: [Does the approach match the spirit of the request, not just the letter? YES/caveat]
 - Confidence: [0.0-1.0] [brief reason if below 0.9]
 ```
 
@@ -123,14 +127,31 @@ Import project and language-specific guidelines as needed:
 
 **If NO triggers apply:** Proceed directly, but still include the Verification Block.
 
+### Ambiguity Pre-check (Standard/Critical)
+
+Before coding, verify these three conditions are met. If any answer is "no", clarify before proceeding:
+- **Goal** — Is the objective specific and measurable? ("Add pagination" vs "make it better")
+- **Constraints** — Are limitations explicit? (Performance targets, compatibility, scope boundaries)
+- **Success criteria** — How will we know it's done? (Observable behaviour, not just "it works")
+
+This checks clarity of the *problem*. Confidence calibration (§5) checks correctness of the *solution*. Both gates matter — you can be confident in a solution to the wrong problem.
+
+> For a structured interview workflow, see `/clarify` (§11).
+
 ### Clarification Gate
 
-Ask when:
+**How to clarify** (don't just say "please clarify"):
+- Target the single biggest ambiguity, not scatter-shot questions
+- Present 2-3 likely interpretations rather than an open-ended prompt
+- Don't start solving while still clarifying — gather information first
+- Ask ontological questions when requirements are vague: "What are you assuming?" / "What must exist first?"
+
+**Ask when:**
 - A missing input would materially change the answer
 - The risk of a wrong assumption is high
 - The task depends on user preference (taste, policy, priority)
 
-Don't ask when:
+**Don't ask when:**
 - It's an implementation detail the user doesn't care about (e.g., `forEach` vs `map`)
 - The answer is in the codebase and you can look it up yourself
 - You can make a safe, reversible choice and note the assumption
@@ -224,7 +245,26 @@ In these cases, reduce your initial confidence estimate by 0.2 and verify explic
 
 1. Identify the weakest link — what specific artifact is missing or failing?
 2. Try a different approach OR ask for the missing info
-3. Max 4 retries; if still below 0.8, escalate to user
+3. **Hard cap — 4 total attempts** on the same sub-problem. If you hit 4, escalate to user with a structured blocker report (§7).
+
+**Detect pathological loops** (these fire before the hard cap):
+- **Oscillation** — After 2 failed attempts, check: "Am I reverting changes from the previous attempt?" If yes, you're flip-flopping between two broken states. Stop and reframe the problem entirely.
+- **Stagnation** — After 3 attempts with similar error messages (>70% overlap), stop coding. Adopt Researcher mode (§6): investigate root cause before trying again.
+- **Analysis paralysis** — If you've alternated between planning/researching and implementing 3+ times without converging on a stable approach, you're in a Wonder→Reflect loop. Force a decision: pick the best approach so far, commit to it, and see it through to the Verification Block. The information you're missing will surface during implementation faster than during further analysis.
+
+> If you're stuck and unsure how to reframe, see `/unstuck` (§11).
+
+---
+
+### Self-Correction Loop (Critical mode)
+
+For Critical-mode tasks, after the initial implementation passes the Verification Block:
+
+1. **Self-review** — Score the implementation against the 3 semantic dimensions (correctness, completeness, intent alignment). Be honest — passing tests doesn't mean the approach is right.
+2. **If any dimension scores below "confident"** — Write a structured critique: what's wrong, what specifically needs to change, and why. Then iterate with that critique as context.
+3. **Cap at 2 self-correction iterations.** If the third pass still has concerns, escalate to the user with a structured comparison of what you tried.
+
+This is not the same as the Recovery Path above (which handles failures). This handles code that *works* but may not be *right*. Use `/review` (§11) to run this as a structured workflow.
 
 ---
 
@@ -245,6 +285,28 @@ For class-level or module-level code generation with large context available:
 - Holistic generation maintains internal consistency across methods, shared state, and type contracts
 - Incremental generation risks introducing inconsistencies between methods generated in separate passes
 - Exception: when the class is very large (>200 lines), decompose by logical concern, not by method
+
+### Thinking Modes
+
+When complexity triggers fire, confidence drops below 0.7, or you're stuck, adopt an explicit reasoning strategy rather than just "decomposing" generically. Each mode is a cognitive lens — a deliberate way to reframe the problem.
+
+| Mode | Core Question | When to Adopt |
+|------|--------------|---------------|
+| **Contrarian** | "What if the opposite is true?" | When you've committed to an approach without examining assumptions. Forces you to argue the opposing position before proceeding. |
+| **Simplifier** | "What can we remove?" | When complexity is overwhelming. Challenge every component: "Is this truly necessary? What breaks if removed?" Target minimum viable solution. |
+| **Researcher** | "What information are we missing?" | When the problem is unclear or you're guessing. Stop coding. Define unknowns explicitly, gather evidence systematically, form a hypothesis before acting. |
+| **Architect** | "Are we fighting the architecture?" | When surgical changes keep failing — same bug recurring in different forms, simple changes requiring many files. Diagnose structural root cause, propose minimal restructuring. |
+| **Ontologist** | "What IS this, really?" | When requirements are vague or you suspect you're solving symptoms. Ask four questions: essence, root cause, prerequisites, hidden assumptions. |
+| **Hacker** | "What constraints are actually required?" | When blocked and standard approaches have failed. Question each constraint, look for bypasses, consider solving a simpler adjacent problem. |
+
+**Routing heuristic** (when you're stuck and unsure which mode to adopt):
+- Repeated similar failures → **Contrarian** (challenge assumptions)
+- Too many options → **Simplifier** (reduce scope)
+- Missing information → **Researcher** (investigate)
+- Analysis paralysis → **Hacker** (just make it work)
+- Structural issues → **Architect** (redesign)
+
+You don't need to adopt a mode for every task. These are tools for when standard decomposition isn't cutting it.
 
 ### Output Template (complex tasks)
 
@@ -336,7 +398,7 @@ When your changes create orphans:
 | Request | Transform to |
 |---------|-------------|
 | "Add validation" | Write tests for invalid inputs, then make them pass |
-| "Fix the bug" | Write a test that reproduces it, then make it pass |
+| "Fix the bug" | Write a test that reproduces it, then make it pass (see §9 Bug-Fix Workflow) |
 | "Refactor X" | Ensure tests pass before and after |
 
 Plan format:
@@ -495,6 +557,11 @@ This follows the Information Gap principle: supplementary context compensates fo
 
 - Only spawn a team when the task genuinely benefits from parallel execution across different domains (e.g., frontend + backend + tests simultaneously)
 - Each agent should have deep expertise in their assigned domain (e.g., frontend, backend, testing, data, architecture, DevOps)
+- **Tool constraints per role:** When defining specialist agents, restrict their tool access to match their role:
+  - *Research/exploration agents:* Read, Glob, Grep, WebFetch — no Write/Edit (prevents premature changes)
+  - *Implementation agents:* All tools — but scoped to their assigned files/directories
+  - *Review agents:* Read, Glob, Grep — no Write/Edit (forces review-only output)
+  - This prevents role drift — a research agent that starts editing files is no longer doing research
 - Use the shared task list for coordination — agents claim and complete tasks independently
 - One logical concern per agent — don't overload specialists with unrelated work
 - Offload research, exploration, and parallel analysis to keep the lead agent's context clean
@@ -541,6 +608,25 @@ git worktree add ../project-tests feature/tests
 - Go fix failing CI tests without being told how
 - **Autonomy vs. Clarification rule:** If the action is safe and reversible, act first and explain after. If it could break shared state, is irreversible, or meets the Clarification Gate conditions (§2), stop and ask. When in doubt, bias toward action for local changes and toward asking for shared/external changes.
 
+### Bug-Fix Workflow (MANDATORY)
+
+**When a bug is reported, do NOT jump straight to fixing it.** Follow this sequence:
+
+1. **Reproduce first** — Write a failing test that demonstrates the bug. The test must fail for the right reason (the bug), not for an unrelated setup issue.
+2. **Verify the test** — Run the test suite and confirm the new test fails as expected while existing tests still pass.
+3. **Delegate the fix** — Spawn subagent(s) to implement the fix. Each subagent receives:
+   - The failing test (file path and test name)
+   - Relevant source files identified during reproduction
+   - The constraint: **the fix is done when the new test passes and no existing tests break**
+4. **Verify the fix** — The lead agent (you) runs the full verification sequence (typecheck, build, test) after the subagent completes.
+
+**Why this order matters:**
+- A reproducing test defines the bug precisely — no ambiguity about what "fixed" means
+- Subagents work best with a clear, verifiable success criterion (a passing test)
+- The test survives as a regression guard, preventing the bug from returning
+
+**Exception:** If the bug is trivial (typo, wrong constant, off-by-one visible in a single line), skip subagents and fix directly — but still write the test first.
+
 ### Demand Elegance
 - For non-trivial changes: pause and ask "is there a more elegant way?"
 - If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
@@ -578,7 +664,7 @@ pnpm test -- --run  # Runtime behaviour — catches logic errors
 - Test fixtures MUST use complete type-conformant objects — never skip required fields. Read the type definition first.
 - When an agent adds a reducer or modifies state logic, require a unit test that verifies **domain invariants** (e.g., balance conservation, state consistency) — not just that "it completes"
 - When an agent writes error-handling catch blocks, require the catch pattern to be as narrow as possible — match the specific error, never use broad patterns
-- Edge-case tests are mandatory: empty/zero inputs, single-element collections, boundary values. See `AGENTS-PROJECT.md` for project-specific edge cases.
+- Edge-case tests are mandatory: empty/zero inputs, single-element collections, boundary values. See `AGENTS-PROJECT.md` for project-specific test locations and keyword triggers.
 
 ### File Edit Conflicts (Exponential Backoff — Fallback)
 
@@ -630,6 +716,20 @@ Keep entries concise. Sacrifice grammar for the sake of concision. This file hel
 
 ---
 
+## 11. Skills
+
+Skills are reusable workflow scripts in `skills/*/SKILL.md`. When invoked, read the skill file and follow its instructions directly.
+
+| Command | Skill | When to Use |
+|---------|-------|-------------|
+| `/unstuck` | `skills/unstuck/SKILL.md` | When stuck after multiple failed attempts. Routes to a Thinking Mode (§6) based on the type of block. |
+| `/clarify` | `skills/clarify/SKILL.md` | When the Ambiguity Pre-check (§2) fails. Structured interview to elicit missing requirements. |
+| `/review` | `skills/review/SKILL.md` | After completing a Critical-mode task. Structured self-evaluation against semantic dimensions before marking done. See §5 Self-Correction Loop. |
+
+Skills are invoked by explicit command only — not by pattern-matching on conversational phrases. The user must type the command (or a close paraphrase like "run the unstuck skill") to trigger it.
+
+---
+
 # APPENDIX A: RLM Patterns (Large Context)
 
 See [`AGENTS-RLM.md`](./AGENTS-RLM.md) for large context handling patterns. **Load only when:** context > 100K tokens, task requires processing most/all of a large input, or task scales O(N)/O(N²).
@@ -669,4 +769,4 @@ Contents: Technical Architecture, Codebase Structure, Technologies Used, Technic
 
 ---
 
-**REMINDER: Every response that includes code changes MUST end with a Verification Block. See Section 1.**
+**REMINDER: Every response that includes code changes MUST end with a Verification Block. See §1.**

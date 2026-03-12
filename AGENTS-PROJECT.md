@@ -70,6 +70,18 @@ Use conventional commits. Keep the subject line under 72 chars, imperative mood.
 
 ---
 
+## Git Workflow
+
+<!-- Uncomment the workflow your project uses: -->
+
+<!-- **Trunk-based:** Commit directly to `main`. No feature branches. -->
+<!-- **Feature branch:** Create `feature/name` branches. Merge via PR. -->
+<!-- **PR-required:** All changes via PR. No direct commits to `main`. CI must pass. -->
+
+**Default (if not specified):** Assume feature branch workflow. Create a branch for Standard/Critical tasks; commit directly for Quick tasks.
+
+---
+
 ## GitHub Gists
 
 Always create **private/secret** gists by default. Never use `--public` unless the user explicitly asks for a public gist.
@@ -86,13 +98,39 @@ Always create **private/secret** gists by default. Never use `--public` unless t
 
 ---
 
+## Hooks (Optional)
+
+Claude Code hooks provide automatic guardrails that fire on specific events. Configure in `.claude/settings.json`.
+
+| Hook Point | When It Fires | Example Use |
+|-----------|--------------|-------------|
+| `SessionStart` | Beginning of a conversation | Load relevant learnings, check environment |
+| `UserPromptSubmit` | Before processing a user message | Route commands, detect keywords |
+| `PostToolUse` (matcher: `Write\|Edit`) | After any file edit | Check for drift from task scope |
+
+Each hook runs an external script with a hard timeout (3-5s recommended). Hooks should be lightweight checks, not heavy processing. Hooks fail silently if they exceed the timeout.
+
+```jsonc
+// .claude/settings.json — example configuration
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Write|Edit",
+      "hooks": [{"type": "command", "command": "python3 scripts/drift-check.py", "timeout": 3}]
+    }]
+  }
+}
+```
+
+> **For AI agents:** You can read and respect hook output, but never modify `.claude/settings.json` unless the user explicitly asks. If a hook blocks your action, report what happened and ask the user to adjust their hook configuration.
+
+---
+
 ## Learnings System
 
-Current count: **0 documented learnings**
+Current count: **42 documented learnings**
 
 See [`learnings/INDEX.md`](./learnings/INDEX.md) for the complete categorized list.
-
-> **Setup**: Create a `learnings/` directory with an `INDEX.md` inside it.
 
 ### When to Add a Learning
 
