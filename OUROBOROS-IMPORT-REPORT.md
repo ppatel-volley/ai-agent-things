@@ -2,7 +2,7 @@
 
 > **What useful elements from `/Users/pratik/dev/ouroboros` could strengthen the agent guidelines in this repo?**
 >
-> **Last updated:** 2026-03-09 — ouroboros v0.20.0
+> **Last updated:** 2026-03-12 — ouroboros v0.21.1
 
 ## Executive Summary
 
@@ -12,13 +12,27 @@ The two are highly complementary. The biggest wins come from importing ouroboros
 
 ### Changes Since Previous Report
 
-Ouroboros has matured significantly. Key changes:
+#### v0.20.0 → v0.21.1 (2026-03-09 → 2026-03-12)
 
 | Area | What Changed |
 |------|-------------|
-| **Version** | Now v0.20.0 with consistent versioning across plugin.json, pyproject.toml |
-| **Skills** | Grew from 4 referenced skills to **13**: added `welcome`, `seed`, `run`, `evolve`, `ralph`, `setup`, `tutorial`, `help`, `update` |
-| **Ralph loop** | New persistent self-referential execution loop with QA verdict integration, parallel execution, and git branch detection (see new Import #10 below) |
+| **Version** | v0.21.1 (two releases since last import) |
+| **Blind convergence gate** | `evolve_step` now validates that mechanical checks actually ran before declaring convergence. If validation was skipped or errored, convergence is blocked regardless of ontology similarity score. (Commit `1974de2`) |
+| **False convergence messaging** | Clearer error messages when convergence is blocked by the validation gate (`d3729de`) |
+| **Async background execution** | `run` and `ralph` skills now use `ouroboros_start_execute_seed` + `ouroboros_job_wait` + `ouroboros_job_result` for non-blocking execution with progress polling |
+| **Cancel skill** | New `ooo cancel` command for stuck/orphaned executions (interactive, explicit, or `--all`) |
+| **Deferred MCP tool loading** | All skills now include a "Load MCP Tools" section using `ToolSearch` before checking availability — prevents false negatives from deferred tool registration |
+| **EventStore unification** | Dead `StateStore` removed, everything unified on `EventStore` (`d849394`) |
+| **Python 3.12+ support** | Lowered from 3.14+ to 3.12+ with updated CI matrix |
+
+**Transferable pattern from this release:** The blind convergence gate — don't declare success if verification steps were skipped or errored. This reinforces the self-correction loop (Import #10) with an explicit "verification completeness" check.
+
+#### Pre-v0.20.0 changes (for reference)
+
+| Area | What Changed |
+|------|-------------|
+| **Skills** | Grew from 4 referenced skills to **13+**: added `welcome`, `seed`, `run`, `evolve`, `ralph`, `setup`, `tutorial`, `help`, `update`, `cancel` |
+| **Ralph loop** | Persistent self-referential execution loop with QA verdict integration, parallel execution, and git branch detection (see Import #10) |
 | **Plugin system** | Full `.claude-plugin/` packaging: `plugin.json`, `marketplace.json`, `.mcp.json` — marketplace-ready |
 | **Hooks** | Added `SessionStart` hook (`session-start.py`) alongside existing keyword-detector and drift-monitor |
 | **Git workflow detection** | CLAUDE.md now parses for git/PR workflows; `ralph` and `run` skills adapt behaviour for PR-based projects |
@@ -273,25 +287,38 @@ For completeness — areas where ai-agent-things is stronger and ouroboros has n
 
 ## Recommended Implementation Priority
 
-If importing, I'd suggest this order:
+### Status (as of v0.21.1)
 
-1. **Cognitive Modes** (High impact, moderate effort) — Add a "Thinking Modes" section to AGENTS.md with the 6 personas listed above. These immediately improve how the agent approaches problems.
+| # | Import | Status | Location |
+|---|--------|--------|----------|
+| 1 | Cognitive Modes | **DONE** | AGENTS.md §6 Thinking Modes |
+| 2 | Structured Clarification Protocol | **DONE** | AGENTS.md §2 Clarification Gate |
+| 3 | Ambiguity Scoring / Pre-coding Gate | **DONE** | AGENTS.md §2 Ambiguity Pre-check |
+| 4 | Stagnation/Oscillation Detection | **DONE** | AGENTS.md §5 Recovery Path (pathological loops) |
+| 5 | Semantic Verification Step | **DONE** | AGENTS.md §1 Verification Block (semantic check) |
+| 6 | Hooks Pattern | **DONE** | AGENTS-PROJECT.md §Hooks |
+| 7 | Named Workflow Wrappers | **DONE** | AGENTS.md §11 Skills (/unstuck, /clarify, /review) |
+| 8 | Self-Referential QA Loop | **DONE** | AGENTS.md §5 Self-Correction Loop |
+| 9 | Auto-escalation on failure | **DONE** | AGENTS.md §5 Recovery Path |
+| 10 | Git Workflow Detection | **DONE** | AGENTS-PROJECT.md §Git Workflow |
+| 11 | False Completion Guard | **DONE** | AGENTS.md §5 Self-Correction Loop |
 
-2. **Structured Clarification Protocol** (High impact, low effort) — 5 bullet points enhancing complexity trigger #3. Quick win.
+### Original priority order (for reference)
 
-3. **Ambiguity Scoring / Pre-coding Gate** (High impact, low effort) — 3-question checklist for Standard/Critical modes. Another quick win.
+1. **Cognitive Modes** (High impact, moderate effort) — ✅ Imported as §6 Thinking Modes.
+2. **Structured Clarification Protocol** (High impact, low effort) — ✅ Imported as §2 Clarification Gate.
+3. **Ambiguity Scoring / Pre-coding Gate** (High impact, low effort) — ✅ Imported as §2 Ambiguity Pre-check.
+4. **Stagnation/Oscillation Detection** (Medium impact, low effort) — ✅ Imported into §5 Recovery Path. Ouroboros v0.20.0+ validates with explicit Wonder→Reflect stagnation breaking.
+5. **Semantic Verification Step** (Medium impact, low effort) — ✅ Imported into §1 Verification Block with 3 semantic dimensions.
+6. **Hooks Pattern** (Medium impact, moderate effort) — ✅ Documented in AGENTS-PROJECT.md with example configuration. Ouroboros now has 3+ concrete hook examples.
+7. **Named Workflow Wrappers** (Medium impact, moderate effort) — ✅ Imported as §11 Skills (/unstuck, /clarify, /review).
+8. **Self-Referential QA Loop** (Medium impact, high effort) — ✅ Imported as §5 Self-Correction Loop for Critical-mode tasks.
 
-4. **Stagnation/Oscillation Detection** (Medium impact, low effort) — 3 bullet points in the Recovery Path section. *Note: ouroboros v0.20.0 now has explicit Wonder→Reflect stagnation breaking in the evolve skill, validating this recommendation.*
+### Remaining medium-value imports (not yet imported)
 
-5. **Semantic Verification Step** (Medium impact, low effort) — One additional line in the verification block for Standard/Critical. Consider adding the QA Judge's 5-dimension scoring framework (Correctness, Completeness, Quality, Intent Alignment, Domain-Specific).
-
-6. **Hooks Pattern** (Medium impact, moderate effort) — Document the pattern; actual hooks are project-specific. Ouroboros now has 3 concrete hook examples (session-start, keyword-detector, drift-monitor) with timeouts — good reference implementations.
-
-7. **Named Workflow Wrappers** (Medium impact, moderate effort) — Optional after the core handbook changes. Add a small set of entry points for repeated flows like clarification, drift checks, and recovery when stuck. Ouroboros now has 13 skills showing the full pattern.
-
-8. **Self-Referential QA Loop** (Medium impact, high effort) — For Critical-mode tasks, add an iterative self-correction pattern based on the Ralph loop: execute → judge → fix → repeat with structured feedback. Most valuable for complex, multi-file changes.
-
-Items 1-5 could be done in a single editing pass to AGENTS.md. Items 6-8 are follow-on operational improvements. Total addition for the handbook-only changes: roughly 80-120 lines.
+- **Result Type Pattern (#7)** — Already covered by discriminated unions in AGENTS-REACT-TS.md. No action needed.
+- **Dependency Layering Model (#8)** — Worth adding for projects that grow beyond a certain size. Low priority.
+- **Skill-as-Plugin Distribution (#12)** — Current inline approach works at small scale. Revisit if skills grow beyond 5-6.
 
 ---
 
