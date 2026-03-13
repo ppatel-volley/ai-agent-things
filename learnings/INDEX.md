@@ -2,7 +2,7 @@
 
 > **Before starting work, check this index for relevant learnings to avoid repeating past mistakes.**
 >
-> Amalgamated from three game projects: **finalfrontier** (FF), **weekend-poker** (WP), and **emoji-multiplatform** (EM).
+> Amalgamated from four game projects: **finalfrontier** (FF), **weekend-poker** (WP), **emoji-multiplatform** (EM), and **TokenRaider** (TR).
 > Duplicates have been merged. Each learning contains a generalised principle plus project-specific context.
 
 ---
@@ -20,11 +20,11 @@
 | Wallet / currency / chips | [012](./012-wallet-floor-of-zero.md) |
 | JavaScript operators | [013](./013-nullish-coalescing-precedence.md) |
 | VGF client setup | [014](./014-vgf-transport-sessions-setup.md) |
-| VGF phases / transitions | [015](./015-vgf-phase-callback-contexts.md), [016](./016-vgf-endif-cascade-limitations.md), [019](./019-vgf-480-phase-transitions.md) |
+| VGF phases / transitions | [015](./015-vgf-phase-callback-contexts.md), [016](./016-vgf-endif-cascade-limitations.md), [019](./019-vgf-480-phase-transitions.md), [047](./047-vgf-rfc-predictable-state-processing.md), [048](./048-bot-auto-actions-in-onbegin.md) |
 | VGF timers / schedulers | [017](./017-vgf-devscheduler-patterns.md), [032](./032-timer-management-patterns.md) |
 | VGF Socket.IO issues | [018](./018-vgf-socketio-message-workarounds.md) |
 | VGF dev mode | [014](./014-vgf-transport-sessions-setup.md), [017](./017-vgf-devscheduler-patterns.md), [020](./020-vgf-dev-session-lifecycle.md), [042](./042-dev-server-port-conflicts.md) |
-| VGF 4.8.0 migration | [019](./019-vgf-480-phase-transitions.md) |
+| VGF 4.8.0+ migration | [019](./019-vgf-480-phase-transitions.md), [049](./049-vgf-project-scaffolding.md) |
 | Three.js rendering | [021](./021-threejs-line-rendering.md), [022](./022-webgl-shader-uniforms.md) |
 | Shaders / GLSL | [022](./022-webgl-shader-uniforms.md), [023](./023-shader-coordinate-space-lighting.md), [024](./024-ring-shadow-ray-sphere-intersection.md), [025](./025-star-lighting-and-corona.md) |
 | Lighting | [023](./023-shader-coordinate-space-lighting.md), [025](./025-star-lighting-and-corona.md) |
@@ -45,6 +45,13 @@
 | Retention / achievements / challenges | [040](./040-retention-system-integration.md) |
 | Refactoring / DRY | [041](./041-shared-helper-extraction.md) |
 | Dev server / port conflicts | [042](./042-dev-server-port-conflicts.md) |
+| Analytics / tracking | [043](./043-segment-analytics-integration.md) |
+| Session disconnect / cleanup | [044](./044-dual-disconnect-session-cleanup-race.md) |
+| Redis / infrastructure | [045](./045-redis-client-consolidation.md) |
+| Docker / deployment | [046](./046-docker-container-security-checklist.md) |
+| VGF state processing RFC | [047](./047-vgf-rfc-predictable-state-processing.md) |
+| Bot logic / auto-actions | [048](./048-bot-auto-actions-in-onbegin.md) |
+| VGF project scaffolding | [049](./049-vgf-project-scaffolding.md) |
 | Multi-agent / parallel work | [002](./002-vitest-is-not-enough.md), [029](./029-close-all-security-paths.md) |
 | Module replacement / migration | [011](./011-backwards-compatible-module-replacement.md) |
 | Game economy / rewards | [012](./012-wallet-floor-of-zero.md), [040](./040-retention-system-integration.md) |
@@ -87,11 +94,14 @@
 |---|---|---|---|
 | [014](./014-vgf-transport-sessions-setup.md) | Transport, Sessions, and Client Setup | Critical | EM-002, 003, 005, 014, 021 |
 | [015](./015-vgf-phase-callback-contexts.md) | Phase Callback Contexts | Critical | WP-009, EM-016 |
-| [016](./016-vgf-endif-cascade-limitations.md) | endIf Cascade Limitations | Critical | EM-015, 020, 024 |
+| [016](./016-vgf-endif-cascade-limitations.md) | endIf Cascade Limitations | Critical | EM-015, 020, 024, WP-021 |
 | [017](./017-vgf-devscheduler-patterns.md) | DevScheduler Evolution | Critical | EM-009, 013, 027, 029 |
 | [018](./018-vgf-socketio-message-workarounds.md) | Socket.IO Message Workarounds | Critical | EM-008, 017, 023 |
-| [019](./019-vgf-480-phase-transitions.md) | 4.8.0 Phase Transition Rules | Critical | EM-038 |
+| [019](./019-vgf-480-phase-transitions.md) | 4.8.0 Phase Transition Rules | Critical | EM-038, EM-042 |
 | [020](./020-vgf-dev-session-lifecycle.md) | Dev Session Lifecycle | High | EM-022 |
+| [047](./047-vgf-rfc-predictable-state-processing.md) | RFC — Predictable State Processing | Critical | WP-020 |
+| [048](./048-bot-auto-actions-in-onbegin.md) | Bot Auto-Actions in onBegin | High | WP-022 |
+| [049](./049-vgf-project-scaffolding.md) | Project Scaffolding (0-to-1) | Critical | TR-043 |
 
 ### Three.js & Shaders
 
@@ -148,12 +158,21 @@
 
 | # | Title | Severity | Sources |
 |---|---|---|---|
-| [037](./037-pr-review-codebase-scan.md) | PR Review Must Trigger Codebase-Wide Scan | High | EM-031, EM-033 |
+| [037](./037-pr-review-codebase-scan.md) | PR Review Must Trigger Codebase-Wide Scan | High | EM-031, EM-033, EM-041 |
 | [038](./038-procedural-generation-clustering.md) | Procedural Generation Clustering Prevention | Medium | FF-011 |
 | [039](./039-verify-before-communicating.md) | Verify UI Details Before Communicating | Medium | FF-012 |
 | [040](./040-retention-system-integration.md) | Retention System Integration | Critical | WP-010, WP-011 |
 | [041](./041-shared-helper-extraction.md) | Shared Helper Extraction | Medium | EM-028 |
 | [042](./042-dev-server-port-conflicts.md) | Dev Server Port Conflicts | High | EM-011 |
+| [043](./043-segment-analytics-integration.md) | Segment Analytics Integration Patterns | High | EM-039 |
+| [044](./044-dual-disconnect-session-cleanup-race.md) | Dual Disconnect Session Cleanup Race | High | EM-040 |
+
+### Infrastructure & DevOps
+
+| # | Title | Severity | Sources |
+|---|---|---|---|
+| [045](./045-redis-client-consolidation.md) | Redis Client Consolidation | High | WP-018 |
+| [046](./046-docker-container-security-checklist.md) | Docker Container Security Checklist | High | WP-019 |
 
 ---
 
@@ -260,6 +279,37 @@
 | DRY extraction threshold | 041 |
 | Bypass trap — missing side effects | 041 |
 | `tsx watch` port release | 042 |
+| Segment analytics | 043 |
+| `closeAndFlush` destroys client | 043 |
+| React StrictMode + analytics init | 043 |
+| Dead code tracking | 037, 043 |
+| FTUE path bypasses | 043 |
+| Dual disconnect race | 044 |
+| Module-level Set/Map in tests | 044 |
+| Per-session cleanup flag | 044 |
+| Redis client consolidation | 045 |
+| Dependency injection (Redis) | 045 |
+| Docker non-root USER | 046 |
+| Readiness vs liveness health check | 046 |
+| BuildKit secrets | 046 |
+| `hadolint` / image scanning | 046 |
+| VGF RFC state processing | 047 |
+| `await ctx.dispatch` in thunks | 047 |
+| Immediate broadcast (3 dispatches = 3 broadcasts) | 047 |
+| Direct storage manipulation bypass | 047 |
+| `onBegin` return value deprecated | 015, 047 |
+| Bot auto-actions | 048 |
+| `.every()` endIf with bots | 048 |
+| VGF project scaffolding | 049 |
+| `[key: string]: unknown` index signature | 049 |
+| VGF subpath imports | 049 |
+| `DispatchTimeoutError` expected (WGFServer) | 010, 049 |
+| `MaybePlatformProvider` pattern | 035, 049 |
+| Stale `nextPhase` infinite oscillation | 019 |
+| `CLEAR_NEXT_PHASE` in onBegin | 019 |
+| `endIf` before `onBegin` on re-entry | 016 |
+| `resetPhaseFlags` reducer | 016 |
+| Bot review false positives | 037 |
 
 ---
 
@@ -291,7 +341,7 @@ Every original learning mapped to its amalgamated file:
 | FF-018 | [025](./025-star-lighting-and-corona.md) |
 | FF-019 | [005](./005-vitest-custom-error-messages.md) |
 
-### weekend-poker (14 → 12 files)
+### weekend-poker (22 → 17 files)
 
 | Original | Amalgamated |
 |---|---|
@@ -309,8 +359,16 @@ Every original learning mapped to its amalgamated file:
 | WP-012 | [031](./031-voice-parse-and-routing.md) |
 | WP-013 | [004](./004-playwright-cross-page-locators.md) |
 | WP-014 | [013](./013-nullish-coalescing-precedence.md) |
+| WP-015 | [019](./019-vgf-480-phase-transitions.md) |
+| WP-016 | [029](./029-close-all-security-paths.md) |
+| WP-017 | [018](./018-vgf-socketio-message-workarounds.md) |
+| WP-018 | [045](./045-redis-client-consolidation.md) |
+| WP-019 | [046](./046-docker-container-security-checklist.md) |
+| WP-020 | [047](./047-vgf-rfc-predictable-state-processing.md) |
+| WP-021 | [016](./016-vgf-endif-cascade-limitations.md) |
+| WP-022 | [048](./048-bot-auto-actions-in-onbegin.md) |
 
-### emoji-multiplatform (38 → 20 files)
+### emoji-multiplatform (42 → 24 files)
 
 | Original | Amalgamated |
 |---|---|
@@ -352,3 +410,13 @@ Every original learning mapped to its amalgamated file:
 | EM-036 | [032](./032-timer-management-patterns.md) |
 | EM-037 | [033](./033-svg-countdown-ring-animation.md) |
 | EM-038 | [019](./019-vgf-480-phase-transitions.md) |
+| EM-039 | [043](./043-segment-analytics-integration.md) |
+| EM-040 | [044](./044-dual-disconnect-session-cleanup-race.md) |
+| EM-041 | [037](./037-pr-review-codebase-scan.md) |
+| EM-042 | [019](./019-vgf-480-phase-transitions.md) |
+
+### TokenRaider (1 → 1 file)
+
+| Original | Amalgamated |
+|---|---|
+| TR-043 | [049](./049-vgf-project-scaffolding.md) |
