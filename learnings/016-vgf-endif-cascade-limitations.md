@@ -1,7 +1,7 @@
 # VGF endIf Cascade Limitations
 
 **Severity:** Critical
-**Sources:** emoji-multiplatform/015, emoji-multiplatform/020, emoji-multiplatform/024
+**Sources:** emoji-multiplatform/015, emoji-multiplatform/020, emoji-multiplatform/024, weekend-poker/021
 **Category:** VGF, Phases, Server
 
 ## Principle
@@ -75,6 +75,47 @@ const onTimeout = (ctx: IThunkContext) => {
 };
 ```
 
+### Scenario 4: PhaseRunner2 checks endIf BEFORE onBegin on re-entry (WP-021)
+
+When a phase loop completes (e.g., `BJ_HAND_COMPLETE` → back to `BJ_PLACE_BETS`), `PhaseRunner2.performSingleTransitionCheck()` checks `endIf` **before** running `onBegin`. If per-round completion flags (`allBetsPlaced`, `dealComplete`, etc.) are still `true` from the previous round, `endIf` immediately triggers the next transition without `onBegin` ever resetting them. This creates an infinite cascade through all phases until OOM (3.9GB).
+
+```ts
+// PhaseRunner2 loop:
+// 1. Check endIf — if true, set phase to next, loop again
+// 2. Check if phase changed — if so, run onEnd/onBegin, loop again
+// On loop-back, step 1 fires BEFORE step 2 ever runs onBegin
+```
+
+**The fix:** Add a `resetPhaseFlags` reducer that clears ALL per-phase completion flags. Call it in the loop-back phase's `onBegin` before setting any new flags:
+
+```ts
+// In the round-complete phase's onBegin:
+ctx.reducerDispatcher('resetPhaseFlags')      // Clear stale flags first
+ctx.reducerDispatcher('setRoundReady', true)   // Then mark round complete
+```
+
+The reset reducer must clear EVERY flag that any `endIf` checks:
+
+```ts
+resetPhaseFlags: (state) => ({
+  ...state,
+  allBetsPlaced: false,
+  dealComplete: false,
+  insuranceComplete: false,
+  playerTurnsComplete: false,
+  dealerTurnComplete: false,
+  settlementComplete: false,
+  roundCompleteReady: false,
+})
+```
+
+**Affected all 5 Weekend Casino games** — Blackjack Classic, Blackjack Competitive, Three Card Poker, Roulette, and Craps all needed reset reducers. 5-Card Draw was safe (used `playablePlayers.length < 2` guard instead of flag checks).
+
+**Red flags:**
+- Any phase whose `next` loops back to an earlier phase in the flow
+- Any `endIf` that checks a flag set in `onBegin` — those flags persist across loops
+- Missing flags in the reset reducer (add every new `endIf` flag to the reset)
+
 ### Summary table
 
 | Trigger | endIf evaluated? | Workaround |
@@ -84,6 +125,7 @@ const onTimeout = (ctx: IThunkContext) => {
 | Scheduler thunk | No | Explicit `SET_PHASE` |
 | `onDisconnect` dispatch | No | Explicit `SET_PHASE` |
 | `onBegin` cascade | Partial (wrong context) | Thunk with `SET_PHASE` |
+| Phase re-entry (loop-back) | Yes, BEFORE onBegin | `resetPhaseFlags` reducer in onBegin |
 
 ## Prevention
 
@@ -91,6 +133,8 @@ const onTimeout = (ctx: IThunkContext) => {
 2. **Defensive thunks:** Wrap phase-ending logic in thunks that check the condition and dispatch `SET_PHASE` directly.
 3. **Integration test:** For each phase, test that the transition fires from both client dispatches and server-side triggers (scheduler, onConnect).
 4. **Timeout safety net:** Add a scheduler-based timeout that checks if the phase should have ended and forces the transition.
+5. **Reset flags on loop-back:** When any phase loops back to an earlier phase, add a `resetPhaseFlags` reducer that clears all per-round completion flags. Call it as the first action in `onBegin`.
+6. **Flag audit:** When adding a new `endIf` flag to any game, add it to the reset reducer too.
 
 <details>
 <summary>EM-015 Context</summary>

@@ -1,7 +1,7 @@
 # PR Review Feedback Must Trigger Codebase-Wide Scan
 
 **Severity:** High
-**Sources:** emoji-multiplatform/031, emoji-multiplatform/033
+**Sources:** emoji-multiplatform/031, emoji-multiplatform/033, emoji-multiplatform/041
 **Category:** Process, Code Review, Quality
 
 ## Principle
@@ -44,12 +44,33 @@ For every pattern flagged in a review:
 - Ban `!` on optional fields — enforce `??` or explicit `undefined` checks via linting.
 - When two functions are symmetric (e.g., `onControllerTimeout` / `onDisplayTimeout`), diff them against each other after any change to either.
 
+### Bot findings on dead code — verify runtime reachability first (EM-041)
+
+Across 5 review cycles on a single PR, Cursor Bugbot repeatedly flagged issues in `CHECK_HIGH_SCORE` — a thunk registered in the ruleset but never dispatched in production code. Each finding was technically correct in static analysis but meaningless at runtime:
+
+- "Game Instance End completed event never fires" (High) — correct finding, wrong location
+- "Duplicate amplitude game_end tracking" (Medium) — both copies were in dead code
+- "Amplitude game_end lost isNewHighScore field" (Medium) — field was never sent in production
+
+**The fix for dead code is deletion, not patching.** Before acting on any bot finding:
+
+1. Verify the flagged function is actually called in production: `grep -r 'dispatchThunk.*THUNK_NAME'`
+2. If the code is dead, delete it or comment explaining why it exists (e.g., registered for future use)
+3. Don't add tracking to dead code paths to satisfy bot findings — that's worse than doing nothing
+4. If the same dead function is flagged across multiple review cycles, that's a strong signal to delete it
+
+**Red flags for false positives:**
+- Bot findings referencing thunks/functions with no callers
+- Multiple bot findings on the same dead function across review cycles
+- "Duplicate tracking" where one copy is in unreachable code
+
 ## Prevention
 
 1. Treat every review comment as a codebase-wide query, not a point fix.
 2. Add a PR checklist item: "Grepped for pattern X across the codebase — N additional instances found and fixed."
 3. Configure external bots (e.g., CodeRabbit, Danger) to run before human reviewers see the PR.
 4. Add ESLint rules for mechanical patterns: no non-null assertions on optional types, no orphaned exports after feature removal.
+5. Before acting on any bot finding, trace the execution path from entry point to the flagged code — verify runtime reachability.
 
 <details>
 <summary>Emoji Multiplatform — EM-031 Bot Catches</summary>

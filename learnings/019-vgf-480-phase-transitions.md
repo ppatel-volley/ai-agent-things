@@ -1,7 +1,7 @@
 # VGF 4.8.0 Phase Transition Rules
 
 **Severity:** Critical
-**Sources:** emoji-multiplatform/038
+**Sources:** emoji-multiplatform/038, emoji-multiplatform/042
 **Category:** VGF, Phases, Migration
 
 ## Principle
@@ -120,6 +120,43 @@ useEffect(() => {
 }, [connected]);
 ```
 
+### CRITICAL: Stale nextPhase causes infinite oscillation (OOM) (EM-042)
+
+The `nextPhase` pattern has a critical gotcha: `nextPhase` is a one-shot signal that must be cleared after consumption. If it persists, it re-triggers `endIf` from subsequent phases, causing an infinite cascade.
+
+**The bug chain:**
+1. `SET_NEXT_PHASE("categorySelect")` dispatched from `onConnect`
+2. Phase runner: lobby → categorySelect. `nextPhase` stays `"categorySelect"`.
+3. User selects category → `categorySelect.endIf` = true → transitions to `difficultySelect`
+4. `difficultySelect.endIf` checks `hasNextPhase("categorySelect" !== "difficultySelect")` → **TRUE!**
+5. `difficultySelect.next()` returns stale `"categorySelect"`
+6. Back to categorySelect → `category !== null` → endIf true → back to difficultySelect
+7. **Infinite loop** — each cycle allocates state objects until 4GB OOM
+
+**The fix:** Every phase's `onBegin` must clear `nextPhase` as its first action:
+
+```ts
+// Add CLEAR_NEXT_PHASE reducer
+const CLEAR_NEXT_PHASE = (state: GameState): GameState => ({
+  ...state,
+  nextPhase: null,
+});
+
+// Every phase's onBegin:
+onBegin: (ctx) => {
+  ctx.reducerDispatcher("CLEAR_NEXT_PHASE", {});
+  // ... rest of onBegin
+},
+```
+
+**Alternatively**, clear `nextPhase` in the source phase's `onEnd` (as shown in the phase config example above). The critical point is that `nextPhase` must be nullified before any subsequent `endIf` evaluation.
+
+**Red flags for stale nextPhase:**
+- One-shot state fields (`nextPhase`, `pendingAction`, etc.) without a corresponding clear mechanism
+- `endIf` conditions that combine domain logic (`category !== null`) with transition signals (`hasNextPhase`) — signals can re-fire from unexpected phases
+- Phase transitions that work in isolation but fail when chained (A→B works, B→C→??? loops)
+- Server OOM within seconds of a user action — almost always an infinite loop
+
 ### Red flags
 
 If you see any of these, you've hit the 4.8.0 phase transition issue:
@@ -135,6 +172,8 @@ If you see any of these, you've hit the 4.8.0 phase transition issue:
 2. **Remove onConnect dependencies:** Audit all `onConnect` handlers and move critical logic to client-initiated thunks.
 3. **Dev mode smoke test:** After upgrading, verify that dev auto-start still works — this is the most likely regression.
 4. **Type guard:** Make `phase` a `readonly` field in your state interface to catch direct assignments at compile time.
+5. **Clear nextPhase:** Every phase's `onBegin` must dispatch `CLEAR_NEXT_PHASE` as its first action. Any "signal" field in game state must have a corresponding clear mechanism.
+6. **Test phase chains:** Test multi-phase transition chains end-to-end (A→B→C), not just individual transitions (A→B).
 
 <details>
 <summary>EM-038 Context</summary>
