@@ -63,7 +63,7 @@ The entry point (`CLAUDE.md` / `.cursorrules`) directs the agent to read the fra
 
 ### Reading Order
 
-The agent reads these in sequence. The first three sections of `AGENTS.md` are mandatory before any code gets written.
+The agent reads these in sequence. Sections 1–3 and section 11 (Skills) of `AGENTS.md` are mandatory before any code gets written.
 
 1. **[AGENTS.md](./AGENTS.md)** — Core behavioural guidelines, verification requirements, complexity triggers
 2. **[AGENTS-PROJECT.md](./AGENTS-PROJECT.md)** — Your project's commands, test locations, keyword triggers
@@ -89,8 +89,8 @@ The heart of the system. Eleven sections covering everything from mandatory veri
 
 - **Pre-Completion Checklist** — Ten items the agent must verify before claiming work is done, including hard gates on type checking and builds (not just tests).
 - **Confidence Calibration** — A defined scale from 0.0 to 1.0 with explicit actions at each level. Below 0.5 means stop and ask for clarification. Includes auto-escalation: if Quick-mode fails twice, upgrade to Standard.
-- **Self-Correction Loop** — For Critical-mode tasks: verify that all verification steps actually ran (no skipped checks), score against semantic dimensions, iterate with structured critique if needed. Capped at 2 iterations.
-- **Recovery Path** — Pathological loop detection: oscillation (flip-flopping between broken states), stagnation (same errors repeating), and analysis paralysis (Wonder→Reflect loops). Hard cap at 4 attempts.
+- **Self-Correction Loop** — For Critical-mode tasks: verify that all verification steps actually ran (no skipped checks), score against 5 dimensions (correctness, completeness, quality, intent alignment, domain-specific) on a 0.0–1.0 scale, iterate with structured critique if needed. Capped at 2 iterations.
+- **Recovery Path** — Pathological loop detection: oscillation (flip-flopping between broken states), stagnation (same errors repeating), and analysis paralysis (Wonder→Reflect loops). Checkpoint recovery before each retry. Hard cap at 4 attempts.
 - **Meta-Cognitive Process** — For complex tasks: Decompose, Solve, Verify, Synthesise, Reflect.
 - **Thinking Modes** — Six cognitive lenses (Contrarian, Simplifier, Researcher, Architect, Ontologist, Hacker) for when standard decomposition isn't cutting it. Each reframes the problem through a different perspective, with a routing heuristic to pick the right one.
 - **Communication Style** — Concise, no filler, explicit about assumptions and risks.
@@ -119,7 +119,7 @@ Fifteen subsections targeting specific, research-backed failure modes:
 
 **Sections 9–11: Workflow, Tasks & Skills**
 
-- **Workflow Orchestration** — When to use plan mode, subagent strategies, autonomous execution rules, multi-agent coordination with human review gates.
+- **Workflow Orchestration** — When to use plan mode, subagent strategies, autonomous execution rules, multi-agent coordination with human review gates. Named orchestration patterns (Pipeline, Fan-out/Fan-in, Swarm, Supervisor) and graceful degradation from parallel to sequential execution.
 - **Task Management** — Structured planning, progress tracking, and a self-improvement loop that captures lessons from mistakes.
 - **Skills** — Reusable workflow scripts invoked by explicit command (`/unstuck`, `/clarify`). See below.
 
@@ -134,15 +134,15 @@ Fifteen subsections targeting specific, research-backed failure modes:
 
 ### Skills — Reusable Workflow Scripts
 
-Skills are invoked by explicit command. They provide structured workflows for situations where general guidelines aren't enough.
+Skills provide structured workflows for situations where general guidelines aren't enough. `/unstuck` and `/clarify` can also be triggered by natural language (e.g., "I'm stuck"); `/review` requires an explicit command.
 
 | Command | What It Does |
 |---------|-------------|
 | `/clarify` | Runs a structured requirements interview when the task is ambiguous. The agent adopts an interviewer role, targets the biggest ambiguity, and presents options rather than open-ended questions. Ends with a bullet-point summary before proceeding. |
 | `/unstuck` | Routes into a Thinking Mode based on the type of block. Repeated failures → Contrarian, too many options → Simplifier, missing info → Researcher, structural issues → Architect, analysis paralysis → Hacker, vague requirements → Ontologist. |
-| `/review` | Structured self-evaluation for Critical-mode tasks. Checks verification completeness, scores against semantic dimensions (correctness, completeness, intent alignment), and iterates with structured critique if needed. |
+| `/review` | 5-dimension quality verdict for Critical-mode tasks. Scores correctness, completeness, quality, intent alignment, and domain-specific criteria on 0.0–1.0 scale. Correctness and completeness are hard gates — either below 0.80 forces REVISE regardless of other scores. |
 
-Skills live in `skills/*/SKILL.md` and are referenced from `AGENTS.md` §11. Add your own by creating a new directory under `skills/` with a `SKILL.md` file.
+Skills live in `skills/*/SKILL.md` and are referenced from `AGENTS.md` §11. `/unstuck` and `/clarify` also respond to natural language triggers (e.g., "I'm stuck" → `/unstuck`). `/review` requires explicit invocation. Add your own by creating a new directory under `skills/` with a `SKILL.md` file.
 
 ---
 
@@ -153,11 +153,12 @@ A template you fill in with your project's specifics:
 - **Commands** — test, typecheck, build, and dev commands
 - **Test locations** — where tests live in your directory structure
 - **Keyword triggers** — domain keywords (e.g., "auth", "database", "api") mapped to relevant learnings
+- **Package-level agent instructions** — how to create `AGENTS.md` files inside monorepo packages for domain-specific patterns
 - **Git workflow** — declare trunk-based, feature-branch, or PR-required so agents adapt their branching and commit behaviour
 - **Hooks** — optional Claude Code hooks for automatic guardrails (session start, keyword routing, drift detection on file edits)
 - **Commit guidelines** — conventional commit format, attribution rules
 - **Dependencies** — rules for adding/updating packages
-- **Learnings system** — how to document and index mistakes for future reference
+- **Learnings system** — how to document and index mistakes, with cross-project learnings support for multi-repo setups
 
 ---
 

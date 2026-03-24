@@ -78,6 +78,7 @@ Import project and language-specific guidelines as needed:
 - Semantic check:
   - Correctness: [Does it do what was asked? YES/NO]
   - Completeness: [All requirements addressed? YES/partial — what's missing]
+  - Quality: [Well-structured and maintainable? YES/concern]
   - Intent alignment: [Does the approach match the spirit of the request, not just the letter? YES/caveat]
 - Confidence: [0.0-1.0] [brief reason if below 0.9]
 ```
@@ -248,6 +249,8 @@ In these cases, reduce your initial confidence estimate by 0.2 and verify explic
 3. If Quick-mode attempt fails twice, consider upgrading to Standard. If Standard fails twice, consider Critical. Escalation is cheaper than spinning.
 4. **Hard cap — 4 total attempts** on the same sub-problem. If you hit 4, escalate to user with a structured blocker report (§7).
 
+**Checkpoint before retrying** — Before each retry attempt, note the last known good state (passing commit, working file state, or the specific point where things were correct). If the retry makes things worse, revert to the checkpoint rather than compounding failures. Don't let attempt N+1 inherit the mess from attempt N.
+
 **Detect pathological loops** (these fire before the hard cap):
 - **Oscillation** — After 2 failed attempts, check: "Am I reverting changes from the previous attempt?" If yes, you're flip-flopping between two broken states. Stop and reframe the problem entirely.
 - **Stagnation** — After 3 attempts with similar error messages (>70% overlap), stop coding. Adopt Researcher mode (§6): investigate root cause before trying again.
@@ -262,9 +265,9 @@ In these cases, reduce your initial confidence estimate by 0.2 and verify explic
 For Critical-mode tasks, after the initial implementation passes the Verification Block:
 
 1. **Verification completeness check** — Before scoring, confirm that all verification steps actually ran and passed. If any step was skipped or errored (e.g., tests not found, build step omitted, type check not run), you cannot declare success. Fix the verification gap first.
-2. **Self-review** — Score the implementation against the 3 semantic dimensions (correctness, completeness, intent alignment). Be honest — passing tests doesn't mean the approach is right.
-3. **If any dimension scores below "confident"** — Write a structured critique: what's wrong, what specifically needs to change, and why. Then iterate with that critique as context.
-4. **Cap at 2 self-correction iterations.** If the third pass still has concerns, escalate to the user with a structured comparison of what you tried.
+2. **Self-review** — Score the implementation against 5 dimensions (correctness, completeness, quality, intent alignment, domain-specific) on a 0.0–1.0 scale. Be honest — passing tests doesn't mean the approach is right. **Correctness and completeness are hard gates** — either one below 0.80 forces REVISE regardless of other scores.
+3. **If any dimension scores below 0.80** — Write a structured critique: specific differences found and actionable suggestions (each completable in a single revision pass). Then iterate with that critique as context.
+4. **Cap at 2 self-correction iterations.** If the third pass still has dimensions below 0.80, escalate to the user with a structured comparison of what you tried.
 
 This is not the same as the Recovery Path above (which handles failures). This handles code that *works* but may not be *right*. Use `/review` (§11) to run this as a structured workflow.
 
@@ -570,6 +573,19 @@ This follows the Information Gap principle: supplementary context compensates fo
 - The lead agent orchestrates, reviews, and merges — specialists execute
 - **Don't over-parallelise:** coordination overhead can exceed the time saved. A single focused agent often outperforms a poorly-coordinated team.
 
+### Multi-Agent Orchestration Patterns
+
+When spawning teams, choose the pattern that fits the task. Don't default to "everyone works in parallel" — the orchestration strategy matters as much as the individual agents.
+
+| Pattern | How It Works | When to Use |
+|---------|-------------|-------------|
+| **Pipeline** | Agent A's output feeds Agent B's input, sequentially. Each agent transforms and passes forward. | Tasks with natural stages: parse → transform → validate → generate |
+| **Fan-out/Fan-in** | Lead decomposes work, specialists execute in parallel, lead merges results. | Independent sub-tasks across different domains (frontend + backend + tests) |
+| **Swarm** | Multiple agents with the same role work on partitioned data/files. | Large-scale changes across many files with the same pattern (bulk migration, rename) |
+| **Supervisor** | Lead agent delegates, monitors progress, and retries or reassigns stalled work. | Long-running tasks where agents may stall, hit errors, or need course correction |
+
+Most Critical-mode tasks use **Fan-out/Fan-in**. Use **Pipeline** when the task has clear sequential dependencies. Use **Supervisor** when reliability matters more than speed. **Swarm** is rare — only when the work is embarrassingly parallel.
+
 ### Git Worktree Strategy (Multi-Agent Default)
 
 **Use git worktrees as the primary isolation strategy for multi-agent work.** Each agent gets its own working directory and branch, eliminating file-level conflicts during parallel execution.
@@ -668,6 +684,16 @@ pnpm test -- --run  # Runtime behaviour — catches logic errors
 - When an agent writes error-handling catch blocks, require the catch pattern to be as narrow as possible — match the specific error, never use broad patterns
 - Edge-case tests are mandatory: empty/zero inputs, single-element collections, boundary values. See `AGENTS-PROJECT.md` for project-specific test locations and keyword triggers.
 
+### Graceful Degradation (Parallel → Sequential)
+
+When parallel agents hit resource constraints — context window overflow, rate limits, excessive file conflicts, or memory pressure — fall back to sequential execution rather than failing:
+
+1. **Detect** — Watch for signs: repeated file edit conflicts, agents producing truncated output, rate-limit errors, or agents stalling without progress
+2. **Degrade** — Switch remaining parallel tasks to sequential. Complete the highest-priority agent first, then feed its output to the next
+3. **Don't restart** — Agents that already completed successfully keep their results. Only re-run what failed or stalled
+
+This is cheaper than retrying the full parallel batch and avoids compounding failures.
+
 ### File Edit Conflicts (Exponential Backoff — Fallback)
 
 When worktrees aren't viable and agents share a directory, or when agents must co-edit shared files (config, lock files, shared types), use this pattern. When you get a "File has been modified since read" error, retry with exponential backoff:
@@ -726,9 +752,13 @@ Skills are reusable workflow scripts in `skills/*/SKILL.md`. When invoked, read 
 |---------|-------|-------------|
 | `/unstuck` | `skills/unstuck/SKILL.md` | When stuck after multiple failed attempts. Routes to a Thinking Mode (§6) based on the type of block. |
 | `/clarify` | `skills/clarify/SKILL.md` | When the Ambiguity Pre-check (§2) fails. Structured interview to elicit missing requirements. |
-| `/review` | `skills/review/SKILL.md` | After completing a Critical-mode task. Structured self-evaluation against semantic dimensions before marking done. See §5 Self-Correction Loop. |
+| `/review` | `skills/review/SKILL.md` | After completing a Critical-mode task. 5-dimension quality verdict (0.0–1.0) with PASS/REVISE/FAIL thresholds. See §5 Self-Correction Loop. |
 
-Skills are invoked by explicit command only — not by pattern-matching on conversational phrases. The user must type the command (or a close paraphrase like "run the unstuck skill") to trigger it.
+**Natural language triggers:** Skills can also fire from conversational phrases, not just slash commands:
+- "I'm stuck" or "think sideways" → `/unstuck`
+- "What exactly are we building?" or asking to clarify requirements → `/clarify`
+
+`/review` has no natural language trigger — it is only invoked by explicit command, because it is a structured self-evaluation for Critical-mode tasks, not a general "does this look right?" check.
 
 ---
 

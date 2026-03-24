@@ -14,9 +14,9 @@
 | Writing or fixing tests | [001](./001-tests-are-source-of-truth.md), [003](./003-scale-dependent-test-values.md), [005](./005-vitest-custom-error-messages.md) |
 | Build failures / TypeScript errors | [002](./002-vitest-is-not-enough.md), [008](./008-r3f-react19-reconciler.md) |
 | E2E / Playwright tests | [004](./004-playwright-cross-page-locators.md) |
-| React components / hooks | [006](./006-useref-usememo-closure-capture.md), [007](./007-error-boundaries-above-providers.md) |
+| React components / hooks | [006](./006-useref-usememo-closure-capture.md), [007](./007-error-boundaries-above-providers.md), [051](./051-useeffect-unmount-stale-cleanup.md) |
 | React Three Fibre / R3F | [006](./006-useref-usememo-closure-capture.md), [008](./008-r3f-react19-reconciler.md), [021](./021-threejs-line-rendering.md) |
-| State management / reducers | [009](./009-reducer-purity.md), [010](./010-dispatch-name-mismatch.md), [011](./011-backwards-compatible-module-replacement.md) |
+| State management / reducers | [009](./009-reducer-purity.md), [010](./010-dispatch-name-mismatch.md), [011](./011-backwards-compatible-module-replacement.md), [050](./050-dispatch-vs-dispatchThunk.md) |
 | Wallet / currency / chips | [012](./012-wallet-floor-of-zero.md) |
 | JavaScript operators | [013](./013-nullish-coalescing-precedence.md) |
 | VGF client setup | [014](./014-vgf-transport-sessions-setup.md) |
@@ -32,8 +32,8 @@
 | Navigation / movement | [027](./027-angular-units-consistency.md), [028](./028-high-speed-navigation-deceleration.md) |
 | Camera | [026](./026-visual-scale-system-cascade.md) |
 | Security fixes | [029](./029-close-all-security-paths.md) |
-| Audio / microphone / speech-to-text | [030](./030-browser-to-deepgram-audio.md) |
-| Voice commands | [031](./031-voice-parse-and-routing.md) |
+| Audio / microphone / speech-to-text | [030](./030-browser-to-deepgram-audio.md), [052](./052-touch-mouse-double-fire.md) |
+| Voice commands | [031](./031-voice-parse-and-routing.md), [050](./050-dispatch-vs-dispatchThunk.md) |
 | Timer / countdown logic | [032](./032-timer-management-patterns.md) |
 | SVG / CSS animation | [033](./033-svg-countdown-ring-animation.md) |
 | Controller / companion screen | [034](./034-controller-phase-handling.md) |
@@ -52,7 +52,10 @@
 | VGF state processing RFC | [047](./047-vgf-rfc-predictable-state-processing.md) |
 | Bot logic / auto-actions | [048](./048-bot-auto-actions-in-onbegin.md) |
 | VGF project scaffolding | [049](./049-vgf-project-scaffolding.md) |
-| Multi-agent / parallel work | [002](./002-vitest-is-not-enough.md), [029](./029-close-all-security-paths.md) |
+| Multi-agent / parallel work | [002](./002-vitest-is-not-enough.md), [029](./029-close-all-security-paths.md), [053](./053-multi-agent-worktree-shared-rebuild.md) |
+| Touch / mobile input events | [052](./052-touch-mouse-double-fire.md) |
+| useEffect cleanup / resource leaks | [051](./051-useeffect-unmount-stale-cleanup.md) |
+| VGF dispatch (reducer vs thunk) | [010](./010-dispatch-name-mismatch.md), [050](./050-dispatch-vs-dispatchThunk.md) |
 | Module replacement / migration | [011](./011-backwards-compatible-module-replacement.md) |
 | Game economy / rewards | [012](./012-wallet-floor-of-zero.md), [040](./040-retention-system-integration.md) |
 
@@ -77,6 +80,7 @@
 | [006](./006-useref-usememo-closure-capture.md) | useRef + useMemo Closure Capture | Critical | WP-001 |
 | [007](./007-error-boundaries-above-providers.md) | Error Boundaries Above Providers | High | EM-004 |
 | [008](./008-r3f-react19-reconciler.md) | R3F + React 19 Reconciler Incompatibility | Critical | WP-005 |
+| [051](./051-useeffect-unmount-stale-cleanup.md) | useEffect Unmount Cleanup — cleanupRef Pattern | Critical | TR-045 |
 
 ### State Management
 
@@ -87,6 +91,7 @@
 | [011](./011-backwards-compatible-module-replacement.md) | Backwards-Compatible Module Replacement | High | WP-003 |
 | [012](./012-wallet-floor-of-zero.md) | Wallet and Stack Floor-of-Zero Guards | Critical | WP-004 |
 | [013](./013-nullish-coalescing-precedence.md) | Nullish Coalescing Precedence | Medium | WP-014 |
+| [050](./050-dispatch-vs-dispatchThunk.md) | ctx.dispatch vs ctx.dispatchThunk — Silent No-Op | Critical | TR-044 |
 
 ### VGF Framework
 
@@ -153,6 +158,7 @@
 | [034](./034-controller-phase-handling.md) | Controller Must Handle All Game Phases | High | EM-030 |
 | [035](./035-platform-sdk-conditional-rendering.md) | Platform SDK Conditional Rendering | Critical | EM-019 |
 | [036](./036-emoji-qr-rendering.md) | Emoji and QR Code Rendering Pitfalls | High | EM-012, EM-018 |
+| [052](./052-touch-mouse-double-fire.md) | Touch + Mouse Event Double-Fire on Mobile | High | TR-046 |
 
 ### Architecture & Process
 
@@ -174,14 +180,23 @@
 | [045](./045-redis-client-consolidation.md) | Redis Client Consolidation | High | WP-018 |
 | [046](./046-docker-container-security-checklist.md) | Docker Container Security Checklist | High | WP-019 |
 
+### Multi-Agent & Build Pipeline
+
+| # | Title | Severity | Sources |
+|---|---|---|---|
+| [053](./053-multi-agent-worktree-shared-rebuild.md) | Multi-Agent Worktree Merge Requires Shared Package Rebuild | High | TR-047 |
+
 ---
 
 ## Cross-Reference by Topic
 
 | Topic | Learnings |
 |---|---|
-| `useMemo` / `useCallback` closures | 006 |
-| `useRef` stale references | 006 |
+| `useMemo` / `useCallback` closures | 006, 051 |
+| `useRef` stale references | 006, 051 |
+| `useEffect` unmount cleanup | 051 |
+| `cleanupRef` pattern | 051 |
+| `eslint-disable exhaustive-deps` | 051 |
 | Error boundaries | 007 |
 | React 19 compatibility | 008 |
 | React Three Fibre / R3F | 006, 008, 021 |
@@ -194,8 +209,11 @@
 | Playwright multi-page | 004 |
 | Reducer purity | 009 |
 | `Date.now()` in reducers | 009 |
-| Dispatch name mismatch | 010 |
-| `DispatchTimeoutError` | 010 |
+| Dispatch name mismatch | 010, 050 |
+| `DispatchTimeoutError` | 010, 050 |
+| `dispatch` vs `dispatchThunk` | 050 |
+| Silent no-op dispatch | 050 |
+| Data-driven dispatch table | 050 |
 | Module replacement / aliasing | 011 |
 | Backwards compatibility | 011 |
 | Wallet integrity | 012 |
@@ -310,6 +328,14 @@
 | `endIf` before `onBegin` on re-entry | 016 |
 | `resetPhaseFlags` reducer | 016 |
 | Bot review false positives | 037 |
+| Touch event synthesis | 052 |
+| `preventDefault()` touch handler | 052 |
+| `onTouchStart` + `onMouseDown` | 052 |
+| Pointer Events API | 052 |
+| Worktree merge stale build cache | 053 |
+| TypeScript project references rebuild | 053 |
+| `tsc --build --force` after merge | 053 |
+| "has no exported member" post-merge | 053 |
 
 ---
 
@@ -415,8 +441,12 @@ Every original learning mapped to its amalgamated file:
 | EM-041 | [037](./037-pr-review-codebase-scan.md) |
 | EM-042 | [019](./019-vgf-480-phase-transitions.md) |
 
-### TokenRaider (1 → 1 file)
+### TokenRaider (5 → 5 files)
 
 | Original | Amalgamated |
 |---|---|
 | TR-043 | [049](./049-vgf-project-scaffolding.md) |
+| TR-044 | [050](./050-dispatch-vs-dispatchThunk.md) |
+| TR-045 | [051](./051-useeffect-unmount-stale-cleanup.md) |
+| TR-046 | [052](./052-touch-mouse-double-fire.md) |
+| TR-047 | [053](./053-multi-agent-worktree-shared-rebuild.md) |

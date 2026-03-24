@@ -8,6 +8,12 @@
 
 VGF's `GameScheduler` is backed by Redis in production but becomes a NoOp in dev mode. Building a `DevScheduler` that properly replicates production behaviour requires careful integration with VGF's internal pipelines. The safest approach is to use the public API (`dispatchThunk`) with defensive phase transitions, rather than trying to route through framework internals.
 
+> **VGF 4.9.2–4.12.1 API changes:**
+> - **Scheduler API renamed (v4.9+):** `schedule()` is now `upsertTimeout()` / `upsertInterval()`. New methods: `pause()`, `resume()`, `dispose()`, `recover()`, `get()`.
+> - **Memory leak fix (v4.9.2):** Timers properly disposed on session deletion via `scheduler.dispose()`.
+>
+> **Operational rule:** The DevScheduler class and defensive `SET_NEXT_PHASE` pattern below remain required until you verify that (a) your VGF version provides a working dev-mode scheduler and (b) scheduler-triggered dispatches now evaluate `endIf`. Neither is confirmed in the v4.12.1 changelog.
+
 ## Details
 
 This learning documents the full evolution of the DevScheduler, from initial discovery through three iterations of increasingly complex (and ultimately failed) internal integrations, culminating in a simple public-API solution.
@@ -17,11 +23,15 @@ This learning documents the full evolution of the DevScheduler, from initial dis
 In dev mode, all scheduler operations silently succeed but do nothing. Every timed transition — round timers, turn timeouts, countdown clocks — simply never fires.
 
 ```ts
-// This registers fine but the callback never executes in dev mode
-ctx.scheduler.schedule("roundTimer", 30000, () => {
-  ctx.dispatchThunk(endRound);
+// Production API (v4.9+): registers fine but the callback never executes in dev mode
+ctx.scheduler.upsertTimeout({
+  name: "roundTimer",
+  delayMs: 30000,
+  dispatch: { kind: "thunk", name: "endRound" },
 });
 ```
+
+> **Historical note:** Pre-v4.9 code used `ctx.scheduler.schedule("roundTimer", 30000, callback)`. The method was renamed to `upsertTimeout`/`upsertInterval` in v4.9 with a different signature — see the API changes note above.
 
 **Initial fix:** `setTimeout` + `ctx.dispatchThunk()` as a fallback.
 
@@ -29,20 +39,24 @@ ctx.scheduler.schedule("roundTimer", 30000, () => {
 // Quick workaround
 if (isDev) {
   setTimeout(() => {
-    ctx.dispatchThunk(endRound);
+    ctx.dispatchThunk("endRound");
   }, 30000);
 } else {
-  ctx.scheduler.schedule("roundTimer", 30000, () => {
-    ctx.dispatchThunk(endRound);
+  ctx.scheduler.upsertTimeout({
+    name: "roundTimer",
+    delayMs: 30000,
+    dispatch: { kind: "thunk", name: "endRound" },
   });
 }
 ```
 
 ### Stage 2: Unified DevScheduler class (EM-013)
 
-Extracted the fallback pattern into a proper class implementing the scheduler interface:
+Extracted the fallback pattern into a proper class. The class below uses the pre-v4.9 `schedule()` signature — adapt to `upsertTimeout`/`upsertInterval` if implementing against the current `IScheduler` interface.
 
 ```ts
+// Historical implementation (pre-v4.9 IScheduler interface)
+// Adapt method signatures to match your installed VGF version
 class DevScheduler implements IScheduler {
   private timers = new Map<string, NodeJS.Timeout>();
 
@@ -68,14 +82,7 @@ class DevScheduler implements IScheduler {
 }
 ```
 
-Usage pattern:
-
-```ts
-const scheduler = services.scheduler ?? ctx.scheduler;
-scheduler.schedule("roundTimer", 30000, () => {
-  ctx.dispatchThunk(endRound);
-});
-```
+> **v4.9+ note:** The current `IScheduler` interface uses `upsertTimeout(opts)` / `upsertInterval(opts)` instead of `schedule(key, delay, callback)`, plus `pause()`, `resume()`, `dispose()`, `recover()`, and `get()`. If building a new DevScheduler, implement against the current interface — the pattern (setTimeout fallback with cancel tracking) is the same, only the method signatures differ.
 
 ### Stage 3: Attempted internal pipeline routing (EM-027)
 
@@ -101,7 +108,7 @@ The `onMessage` pipeline was fundamentally broken for synthetic messages. Multip
 | Async/sync mismatch | Internal handlers mixed async and sync error handling |
 | Unhandled rejections | Promise rejections surfaced as Node warnings, not actionable errors |
 
-**Final fix:** Removed all `onMessage` routing. DevScheduler callbacks use `dispatchThunk` exclusively, with defensive `SET_PHASE` dispatches to handle the `endIf` limitation (see learning 016):
+**Final fix:** Removed all `onMessage` routing. DevScheduler callbacks use `dispatchThunk` exclusively, with defensive `SET_NEXT_PHASE` dispatches to handle the `endIf` limitation (see learning 016):
 
 ```ts
 class DevScheduler implements IScheduler {
@@ -116,17 +123,17 @@ class DevScheduler implements IScheduler {
   // ... cancel, cancelAll as before
 }
 
-// Thunks must handle their own phase transitions
-const endRound = (ctx: IThunkContext) => {
-  ctx.dispatch("setRoundComplete", {});
-  ctx.dispatch("SET_PHASE", { phase: "scoring" });  // defensive — don't rely on endIf
+// Thunks must handle their own phase transitions (use SET_NEXT_PHASE, not SET_PHASE — see learning 019)
+const endRound = async (ctx: IThunkContext) => {
+  await ctx.dispatch("setRoundComplete", {});
+  await ctx.dispatch("SET_NEXT_PHASE", { phase: "scoring" });  // defensive — don't rely on endIf
 };
 ```
 
 ## Prevention
 
 1. **Use the public API:** Never route through VGF internals. `dispatchThunk` is the supported entry point for server-initiated actions.
-2. **Defensive transitions:** Always pair scheduler-triggered state changes with explicit `SET_PHASE` dispatches, because `endIf` won't evaluate.
+2. **Defensive transitions:** Always pair scheduler-triggered state changes with explicit `SET_NEXT_PHASE` dispatches (see [learning 019](./019-vgf-480-phase-transitions.md)), because `endIf` won't evaluate.
 3. **Dev parity test:** Run the same game scenario in both dev and production modes. Any timed transition that works in production but not dev indicates a scheduler gap.
 4. **Avoid `(server as any)`:** If you need to cast to `any` to access framework internals, the approach is wrong.
 
@@ -154,6 +161,6 @@ The motivation for routing through `onMessage` was that `endIf` was not evaluate
 <details>
 <summary>EM-029 Context</summary>
 
-Testing revealed that synthetic connection objects caused VGF's session resolution to fail silently. The `Promise.resolve().catch()` pattern inside VGF swallowed the errors. Node process warnings about unhandled promise rejections were the only visible symptom. After two days of debugging, the entire approach was abandoned in favour of `dispatchThunk` with defensive `SET_PHASE` dispatches.
+Testing revealed that synthetic connection objects caused VGF's session resolution to fail silently. The `Promise.resolve().catch()` pattern inside VGF swallowed the errors. Node process warnings about unhandled promise rejections were the only visible symptom. After two days of debugging, the entire approach was abandoned in favour of `dispatchThunk` with defensive `SET_NEXT_PHASE` dispatches.
 
 </details>

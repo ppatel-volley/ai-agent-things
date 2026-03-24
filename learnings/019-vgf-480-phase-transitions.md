@@ -1,4 +1,4 @@
-# VGF 4.8.0 Phase Transition Rules
+# VGF 4.8.0+ Phase Transition Rules
 
 **Severity:** Critical
 **Sources:** emoji-multiplatform/038, emoji-multiplatform/042
@@ -6,7 +6,14 @@
 
 ## Principle
 
-VGF 4.8.0 throws `PhaseModificationError` if any reducer directly modifies `state.phase`. Phase transitions must use the `nextPhase` + `SET_NEXT_PHASE` reducer + `TRANSITION_TO_PHASE` thunk + `endIf`/`next` pattern. `WGFServer` does NOT call `onConnect`/`onDisconnect` lifecycle hooks — handle setup via client-initiated thunks.
+VGF 4.8.0+ throws `PhaseModificationError` if any reducer directly modifies `state.phase`. Phase transitions must use the `nextPhase` + `SET_NEXT_PHASE` reducer + `TRANSITION_TO_PHASE` thunk + `endIf`/`next` pattern. `WGFServer` does NOT call `onConnect`/`onDisconnect` lifecycle hooks — handle setup via client-initiated thunks.
+
+> **VGF 4.9.0–4.12.1 updates:**
+> - **Actions removed (v4.9.0):** `GameRuleset.actions` and `Phase.actions` are no longer processed. Use reducers and thunks only.
+> - **Cascade depth limiting (v4.10.0):** The stale `nextPhase` infinite oscillation bug (EM-042) would now be caught by `maxTransitionDepth` before reaching OOM — but the root cause (stale `nextPhase`) should still be fixed properly.
+> - **Async dispatch (v4.11.0):** `reducerDispatcher` returns `Promise<void>`. Can `await` for fresh state.
+> - **Lifecycle void return (v4.11.0):** `onBegin`/`onEnd` can return `void`. No longer required to return `GameState`.
+> - **Dispatch buffering (v4.12.0):** Dispatches during lifecycle hooks are buffered and drained after transition. This may improve the reliability of dispatches from `onConnect`.
 
 ## Details
 
@@ -64,9 +71,9 @@ const lobbyPhase = {
   next: (ctx: IGameActionContext): string => {
     return ctx.session.state.nextPhase;
   },
-  onEnd: (ctx: IOnEndContext): GameState => {
-    // Clear the signal
-    return ctx.reducerDispatcher("SET_NEXT_PHASE", { phase: null });
+  onEnd: async (ctx: IOnEndContext): Promise<void> => {
+    // Clear the signal (v4.11.0+: void return preferred)
+    await ctx.reducerDispatcher("SET_NEXT_PHASE", { phase: null });
   },
 };
 ```
@@ -77,9 +84,11 @@ const lobbyPhase = {
 |----------------|------------------------|-------------------|----------------------|
 | Client dispatch | Yes | Yes | Yes |
 | Thunk (`ctx.dispatch`) | Yes | Yes (4.8.0 fix) | Yes |
-| `onConnect` | No | No | No |
-| `onDisconnect` | No | No | No |
-| Scheduler thunk | Yes (via `dispatchThunk`) | Yes (4.8.0 fix) | Yes |
+| `onConnect` | No | No — use `SET_NEXT_PHASE` | No |
+| `onDisconnect` | No | No — use `SET_NEXT_PHASE` | No |
+| Scheduler thunk | Yes (via `dispatchThunk`) | **Unreliable** — see [016](./016-vgf-endif-cascade-limitations.md) Scenario 3. Use defensive `SET_NEXT_PHASE`. | Only with explicit `SET_NEXT_PHASE` |
+
+> **Note:** The scheduler row was previously marked "Yes (4.8.0 fix)" but learning 016 documents an observed bug (EM-024) where scheduler-triggered thunks did NOT evaluate `endIf`, causing the game to hang. Always pair scheduler-triggered state changes with `SET_NEXT_PHASE` dispatches — NOT `SET_PHASE`, which throws `PhaseModificationError` in 4.8.0+.
 
 ### WGFServer lifecycle limitations
 

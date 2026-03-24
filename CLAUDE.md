@@ -15,11 +15,11 @@
 
 Read and follow the guidelines in these files before starting any task:
 
-1. **[AGENTS.md](./AGENTS.md)** — Core behavioral guidelines, verification requirements, and complexity triggers *(start here — first 3 sections are mandatory)*
+1. **[AGENTS.md](./AGENTS.md)** — Core behavioral guidelines, verification requirements, and complexity triggers *(start here — sections 1–3 are mandatory, section 11 defines available skills)*
 2. **[AGENTS-PROJECT.md](./AGENTS-PROJECT.md)** — Project-specific commands, test locations, and keyword triggers
 3. **[AGENTS-REACT-TS.md](./AGENTS-REACT-TS.md)** — Language and framework patterns (swap this file for your stack)
 
-These files contain mandatory requirements for code changes, testing, and verification. Read the first three sections of AGENTS.md completely before writing any code.
+These files contain mandatory requirements for code changes, testing, and verification. Read sections 1–3 and section 11 (Skills) of AGENTS.md before writing any code. Skills (`/unstuck`, `/clarify`, `/review`) are reusable workflows in `skills/*/SKILL.md` — read §11 so you know when to invoke them.
 
 **Conditional reading (load only when needed):**
 - **[AGENTS-THREEJS.md](./AGENTS-THREEJS.md)** — Read ONLY for 3D/WebGL tasks using Three.js, shaders, or React Three Fiber.

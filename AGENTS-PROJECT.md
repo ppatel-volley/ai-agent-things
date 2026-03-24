@@ -62,6 +62,26 @@ Map task keywords to learning document numbers from your `learnings/` folder. Se
 
 ---
 
+## Package-Level Agent Instructions (Monorepos)
+
+For monorepos with specialised subsystems (e.g., an ECS engine, a shared SDK, a domain-specific package), create a package-level `AGENTS.md` inside the package directory:
+
+```
+packages/
+  my-ecs-engine/
+    AGENTS.md          # ECS-specific patterns, file map, API conventions
+    src/
+```
+
+Package-level agent files should cover:
+- **Domain-specific patterns** — API conventions, iteration patterns, lifecycle rules
+- **File map** — Key modules and their responsibilities
+- **Quick reference** — Common code snippets for the package's idioms
+
+These supplement (not replace) the root-level agent files. Load them only when working within that package.
+
+---
+
 ## Commit Guidelines
 
 Use conventional commits. Keep the subject line under 72 chars, imperative mood. Body is optional — use it only when the "why" isn't obvious from the subject.
@@ -128,9 +148,24 @@ Each hook runs an external script with a hard timeout (3-5s recommended). Hooks 
 
 ## Learnings System
 
-Current count: **42 documented learnings**
+Current count: **53 documented learnings**
 
-See [`learnings/INDEX.md`](./learnings/INDEX.md) for the complete categorized list.
+See [`learnings/INDEX.md`](./learnings/INDEX.md) for the complete categorised list.
+
+### Cross-Project Learnings (Multi-Repo Setup)
+
+If your team maintains a canonical learnings repository (e.g., a shared `ai-agent-things/learnings/` repo), reference it here:
+
+```markdown
+An external cross-project learnings repository exists at `/path/to/shared/learnings/`.
+
+- **Before starting work**: Check this repo for learnings relevant to the current task's keyword triggers.
+  Scan filenames and read any that look applicable.
+- **When adding learnings**: Only add to the local `learnings/` folder. Do not write to the shared repo.
+  Learnings are consolidated into the shared repo during periodic reviews.
+```
+
+This ensures project-specific learnings stay local whilst the shared repo provides cross-project knowledge.
 
 ### When to Add a Learning
 

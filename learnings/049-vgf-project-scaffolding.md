@@ -9,6 +9,15 @@
 
 When scaffolding a VGF monorepo from documentation, expect significant gaps between the guide and the actual installed version. Always run `npm view @volley/vgf version` before writing `package.json`, read the actual `.d.ts` files after install, and reference an existing working project (e.g., emoji-multiplatform) rather than trusting the guide alone. 34 issues were discovered scaffolding against VGF 4.9.0 using a guide written for ~4.3.
 
+> **VGF 4.11.0–4.12.1 updates since this learning was written:**
+> - **Actions removed (v4.9.0):** `GameRuleset.actions` is deprecated and ignored. Remove all action definitions.
+> - **Async dispatch (v4.11.0):** `reducerDispatcher` returns `void | Promise<void>`. Can `await` for fresh state.
+> - **Lifecycle void return (v4.11.0):** `onBegin`/`onEnd` can return `void`. No need to return `GameState`.
+> - **Scheduler API (v4.9+):** Uses `upsertTimeout`/`upsertInterval` instead of `schedule()`. Adds `dispose()`, `recover()`, `pause()`, `resume()`.
+> - **Engine state machine (v4.12.0):** Dispatch buffering during lifecycle hooks. Cascade depth limiting.
+> - Point 17 ("onBegin must use reducerDispatcher") is still correct but the return type changed.
+> - Point 22 ("WGFServer does NOT send Socket.IO acks") — ack forwarding was fixed in v4.9.1. Verify.
+
 ## Issues by Category
 
 ### Package & Dependency Issues

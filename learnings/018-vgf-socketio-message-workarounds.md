@@ -8,6 +8,8 @@
 
 VGF's `socket.on("message")` handler can be lost after disconnect/reconnect cycles, especially with React 18 StrictMode. The `onAny` workaround must be applied to ALL VGF clients, not just the display. The `onAny` callback signature is `(eventName, ...data)`, not `(...data)` — the first argument is the event name string, not the payload.
 
+> **VGF 4.9.1+ note:** Ack callback forwarding was fixed in v4.9.1 (`fix: forward ack callback in SocketIOConnection.onMessage`). The core `removeAllListeners` issue described here may also be resolved in newer VGF versions — **verify against your installed version before applying the `onAny` workaround.** If the workaround is no longer needed, remove it to avoid the maintenance burden.
+
 ## Details
 
 ### The core problem (EM-008)

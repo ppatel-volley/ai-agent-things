@@ -1,4 +1,4 @@
-# Dispatch Name Mismatch: Silent Failures in Action Registries
+# Dispatch Name Mismatch: Silent Failures in Reducer/Thunk Registries
 
 **Severity:** Critical
 **Sources:** weekend-poker/006
@@ -6,7 +6,9 @@
 
 ## Principle
 
-When a client dispatches actions by string name and the server looks them up in a registry, mismatched names cause silent failures. The dispatch times out with no helpful error — no "reducer not found" message appears. Always verify that dispatch names match server registration exactly, and consider adding server-side warnings for unrecognised action names.
+When a client dispatches by string name and the server looks it up in a registry, mismatched names cause silent failures. The dispatch times out with no helpful error — no "reducer not found" message appears. Always verify that dispatch names match server registration exactly, and consider adding server-side warnings for unrecognised names.
+
+> **VGF 4.9.0+ note:** Actions have been removed from VGF. All dispatches now target reducers or thunks. The silent failure behaviour described here still applies to both reducer and thunk dispatch.
 
 ## Details
 

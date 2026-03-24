@@ -14,11 +14,12 @@ The VGF Platform Services RFC defines the behavioural contract for dispatches, p
 1. **Consistency** — Reducers run one at a time against latest state. No lost updates.
 2. **Concurrency** — Thunks run concurrently. Only serialised at reducer dispatch.
 3. **Lifecycle Protection** — onBegin/onEnd are protected regions. External dispatches buffer.
-4. **Immediate Broadcast** — Each reducer dispatch broadcasts immediately. 3 dispatches = 3 broadcasts.
+4. **~~Immediate Broadcast~~ Buffered Broadcast (v4.12.0+)** — ~~Each reducer dispatch broadcasts immediately. 3 dispatches = 3 broadcasts.~~ In v4.12.0+, dispatches during lifecycle hooks (onBegin/onEnd) are buffered and drained after the transition completes. Outside lifecycle hooks, broadcasts remain immediate.
 5. **onEnd is a Finaliser** — Cannot trigger phase transitions. endIf NOT checked after onEnd.
 6. **External Sources Buffer** — Player, scheduler, onConnect dispatches buffer during transitions.
-7. **Fresh State** — After `await ctx.dispatch(...)`, getState() is guaranteed fresh.
+7. **Fresh State** — After `await ctx.dispatch(...)`, getState() is guaranteed fresh. (**Confirmed in v4.11.0:** `reducerDispatcher` returns `Promise<void>`.)
 8. **Phase Boundary Enforcement** — Dispatches targeting old phases are discarded with warning.
+9. **Cascade Depth Limiting (v4.10.0+)** — Configurable `maxTransitionDepth` prevents infinite phase cascades.
 
 ## Consumer Rules (MUST Follow)
 
@@ -26,7 +27,7 @@ The VGF Platform Services RFC defines the behavioural contract for dispatches, p
 |---------|-----|-------|-----|
 | Thunks | `await ctx.dispatch(...)` | Call dispatch without await | Ensures fresh state after resolve |
 | Thunks | `ctx.getState()` after async yields | Assume state unchanged after await | Other dispatches may have run |
-| onBegin | Dispatch reducers for state changes | Return a state object (deprecated) | Returning state overwrites inline dispatches |
+| onBegin | Dispatch reducers for state changes, return void | Return a state object (**removed in v4.11.0+**) | Returning state overwrites inline dispatches |
 | onEnd | Use for cleanup only | Call endPhase()/setPhase() | onEnd cannot trigger transitions |
 | Reducers | Keep pure: (state, ...args) => state | Dispatch from within a reducer | Reducers have no dispatch access |
 | Lifecycle | Minimise async work | Do heavy I/O in onBegin/onEnd | Holds protected region open, buffering ALL external dispatches |
@@ -47,17 +48,17 @@ await ctx.dispatch('updateWallet', clientId, amount)
 
 Without await, each dispatch triggers independent endIf checks, and the thunk may continue dispatching into a phase it didn't start in.
 
-### Immediate broadcast explains UI flicker
+### ~~Immediate broadcast explains UI flicker~~ Broadcast behaviour updated in v4.12.0
 
-A thunk that dispatches three reducers produces three broadcasts, not one. Clients see intermediate states between dispatches. Phases with rapid sequential dispatches in onBegin can cause UI flicker.
+~~A thunk that dispatches three reducers produces three broadcasts, not one.~~ **In v4.12.0+**, dispatches during `onBegin`/`onEnd` are buffered and drained after the transition completes. This reduces UI flicker during lifecycle hooks. Outside lifecycle hooks (e.g., in thunks triggered by client actions), multiple dispatches still produce multiple broadcasts — batch your reducer calls or use a single reducer that makes all changes atomically.
 
 ### Direct storage manipulation bypasses protection
 
 Calling `storage.updateSessionState()` directly bypasses VGF's protected regions. If it fires during onBegin/onEnd, it can corrupt state that the lifecycle hook is establishing.
 
-### onBegin return value is deprecated
+### onBegin return value — void is now supported (v4.11.0+)
 
-The RFC says onBegin should dispatch reducers, NOT return state. Learning 015 says onBegin MUST return GameState — this was correct for VGF 4.8.0 but is being deprecated. Future VGF versions will not use the return value.
+~~The RFC says onBegin should dispatch reducers, NOT return state. Learning 015 says onBegin MUST return GameState — this was correct for VGF 4.8.0 but is being deprecated.~~ **Confirmed in VGF 4.11.0:** `onBegin` and `onEnd` now accept `GameState | void | Promise<GameState | void>`. Returning void is the preferred pattern. Dispatch reducers instead of returning state.
 
 ## Red Flags
 

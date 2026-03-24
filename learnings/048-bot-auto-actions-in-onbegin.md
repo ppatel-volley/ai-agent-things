@@ -17,24 +17,25 @@ The Blackjack game froze at `BJ_INSURANCE` when the dealer showed an Ace. The hu
 In `onBegin`, after setting up the phase for human players, auto-resolve all bots:
 
 ```ts
-onBegin: (ctx) => {
+onBegin: async (ctx) => {
   // Set up phase for humans
-  ctx.reducerDispatcher('setDealerMessage', 'Insurance?')
+  await ctx.reducerDispatcher('setDealerMessage', 'Insurance?')
 
   // Auto-resolve bots — they can't respond to prompts
   const state = ctx.getState()
   for (const ps of state.playerStates) {
     const player = state.players.find(p => p.id === ps.playerId)
     if (player?.isBot && !ps.insuranceResolved) {
-      ctx.reducerDispatcher('declineInsurance', ps.playerId)
+      await ctx.reducerDispatcher('declineInsurance', ps.playerId)
     }
   }
 
-  // Check if all resolved after bot auto-actions
+  // Check if all resolved after bot auto-actions (getState() is fresh after await)
   const postBot = ctx.getState()
   if (postBot.playerStates.every(ps => ps.insuranceResolved)) {
-    ctx.reducerDispatcher('setInsuranceComplete', true)
+    await ctx.reducerDispatcher('setInsuranceComplete', true)
   }
+  // v4.11.0+: void return is fine — no need to return state
 }
 ```
 
