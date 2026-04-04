@@ -123,7 +123,7 @@ Example structure:
 ├── staging/
 │   ├── config.yaml
 │   └── secret-provider-class.yaml
-└── prod/
+└── production/
     ├── config.yaml
     └── secret-provider-class.yaml
 ```
@@ -142,6 +142,64 @@ Run the provided scripts to generate:
 | `alertmanagerconfig.yaml` | Prometheus alerting for the namespaces |
 | `slack-<app>-notifications.yaml` | Flux notification provider for Slack |
 | `notification-info.yaml` | Flux alert config per namespace |
+
+---
+
+## Naming Conventions
+
+**IMPORTANT:** Different systems use different conventions for the production environment. Getting these wrong will cause IAM policy mismatches or pods failing to start.
+
+| System | Dev | Staging | Production | Example |
+|--------|-----|---------|------------|---------|
+| K8s namespace | `{app}-dev` | `{app}-staging` | `{app}-production` | `emoji-multiplatform-production` |
+| IAM role name | `{app}-dev` | `{app}-staging` | `{app}-production` | `emoji-multiplatform-production` |
+| SSM parameter path | `/app/dev/*` | `/app/staging/*` | **`/app/prod/*`** | `/emoji-multiplatform/prod/*` |
+| Terraform `environment` var | `dev` | `staging` | `prod` or `production` (varies) | Check existing app |
+| Helm `STAGE` env var | `dev` | `staging` | `production` | — |
+| Helm `DD_ENV` env var | `dev` | `staging` | `production` | — |
+| Config directory (tenants) | `kubernetes/dev/` | `kubernetes/staging/` | `kubernetes/production/` | — |
+
+The SSM path uses **`/prod/`** (abbreviated), not `/production/`. This must match in both the IAM policy (`iam.tf`) and the `SecretProviderClass` (`secret-provider-class.yaml`).
+
+---
+
+## EKS Clusters and OIDC
+
+There are two EKS clusters. Each environment maps to a specific cluster and OIDC issuer:
+
+| Cluster | OIDC Issuer ID | Environments | kubernetes repo directory |
+|---------|---------------|--------------|--------------------------|
+| Production (`shared-k8s`) | `01E696BE35164FB79F396D5B1F5D6FBC` | production | `tenants/shared-k8s/` |
+| Dev/Staging (`shared-k8s-staging`) | `EA6668ABEDE0D8F73A1A994FAB6EF125` | dev, staging | `tenants/shared-k8s-staging/` |
+
+**In Terraform**, the OIDC variable name changes per environment:
+- Production: `oidc_issuer`
+- Dev: `oidc_issuer_dev`
+- Staging: `oidc_issuer_staging`
+
+**In the IAM module**, newer apps use `provider_urls = [var.oidc_issuer]` (list form). Older apps use `provider_url` (singular). Use the list form for new apps.
+
+---
+
+## Secrets via SSM Parameter Store
+
+Secrets are stored in **AWS Systems Manager Parameter Store** (not AWS Secrets Manager). The flow:
+
+1. Store secret as `SecureString` in SSM: `/app-name/{env}/secret_name`
+2. IAM policy grants `ssm:GetParameter` on `parameter/app-name/{env}/*`
+3. `SecretProviderClass` in volley-infra-tenants maps SSM params to K8s secrets
+4. Helm release references the K8s secret via `envFrom.secretRef` and CSI volume mount
+
+**Creating SSM parameters:**
+```bash
+aws ssm put-parameter \
+  --name "/app-name/dev/my_secret" \
+  --value "secret-value" \
+  --type SecureString \
+  --region us-east-1
+```
+
+**Critical:** Only reference SSM parameters in `SecretProviderClass` that actually exist. If a parameter doesn't exist, the pod will fail to start.
 
 ---
 
@@ -177,9 +235,10 @@ Submit a PR to `volley-infra-tenants` modifying `resources` or `autoscaling` in 
 Submit a PR to `volley-infra` modifying the Terraform IAM policy attachments.
 
 ### Adding secrets
-1. Store the secret in AWS Secrets Manager
-2. Add a `SecretProviderClass` entry in `volley-infra-tenants`
-3. Reference it as an env var in the helm release `config.yaml`
+1. Store the secret in **AWS SSM Parameter Store** as `SecureString` (see [Secrets via SSM Parameter Store](#secrets-via-ssm-parameter-store))
+2. Grant IAM access to the parameter path in `volley-infra` (`iam.tf`)
+3. Add a `SecretProviderClass` entry in `volley-infra-tenants`
+4. Reference the K8s secret via `envFrom.secretRef` in the helm release `config.yaml`
 
 ### Getting help
 Post in **#infra-support** Slack channel.
