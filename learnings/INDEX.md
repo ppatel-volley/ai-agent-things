@@ -32,7 +32,7 @@
 | Navigation / movement | [027](./027-angular-units-consistency.md), [028](./028-high-speed-navigation-deceleration.md) |
 | Camera | [026](./026-visual-scale-system-cascade.md) |
 | Security fixes | [029](./029-close-all-security-paths.md) |
-| Audio / microphone / speech-to-text | [030](./030-browser-to-deepgram-audio.md), [052](./052-touch-mouse-double-fire.md) |
+| Audio / microphone / speech-to-text | [030](./030-browser-to-deepgram-audio.md), [052](./052-touch-mouse-double-fire.md), [059](./059-platform-audio-lifecycle-races.md) |
 | Voice commands | [031](./031-voice-parse-and-routing.md), [050](./050-dispatch-vs-dispatchThunk.md) |
 | Timer / countdown logic | [032](./032-timer-management-patterns.md) |
 | SVG / CSS animation | [033](./033-svg-countdown-ring-animation.md) |
@@ -55,6 +55,11 @@
 | Multi-agent / parallel work | [002](./002-vitest-is-not-enough.md), [029](./029-close-all-security-paths.md), [053](./053-multi-agent-worktree-shared-rebuild.md) |
 | Touch / mobile input events | [052](./052-touch-mouse-double-fire.md) |
 | useEffect cleanup / resource leaks | [051](./051-useeffect-unmount-stale-cleanup.md) |
+| Fire TV audio / PlatformAudio | [054](./054-platform-audio-fire-tv.md), [059](./059-platform-audio-lifecycle-races.md) |
+| iOS gyroscope permission persistence | [055](./055-gyroscope-permission-module-level.md) |
+| Socket.IO relay playerId overwrite | [056](./056-socketio-relay-playerid-overwrite.md) |
+| Three.js per-frame allocation audit | [057](./057-threejs-per-frame-allocation-audit.md) |
+| Git LFS + Docker audio failure | [058](./058-git-lfs-docker-audio.md) |
 | VGF dispatch (reducer vs thunk) | [010](./010-dispatch-name-mismatch.md), [050](./050-dispatch-vs-dispatchThunk.md) |
 | Module replacement / migration | [011](./011-backwards-compatible-module-replacement.md) |
 | Game economy / rewards | [012](./012-wallet-floor-of-zero.md), [040](./040-retention-system-integration.md) |
@@ -143,6 +148,7 @@
 |---|---|---|---|
 | [030](./030-browser-to-deepgram-audio.md) | Browser-to-Deepgram Audio Streaming | Critical | EM-006, EM-007 |
 | [031](./031-voice-parse-and-routing.md) | Voice Intents Need Parsing AND Routing | Critical | WP-012 |
+| [059](./059-platform-audio-lifecycle-races.md) | PlatformAudio Lifecycle Races — Generation Counter, Listener Stacking, Seek Reset | Critical | Tempest 2026 |
 
 ### Timer Management
 
@@ -267,6 +273,12 @@
 | Phase config reducer exposure | 029 |
 | Deepgram streaming | 030 |
 | AudioContext user gesture | 030 |
+| PlatformAudio lifecycle races | 059 |
+| Generation counter (async cancellation) | 059 |
+| `.once("end")` listener stacking | 059 |
+| Preloaded audio reuse | 054, 059 |
+| `audio.howl` direct access | 059 |
+| Music phase transitions | 059 |
 | `EADDRINUSE` on watch restart | 030, 042 |
 | Voice intent parsing | 031 |
 | `processVoiceCommand` routing | 031 |
@@ -450,3 +462,14 @@ Every original learning mapped to its amalgamated file:
 | TR-045 | [051](./051-useeffect-unmount-stale-cleanup.md) |
 | TR-046 | [052](./052-touch-mouse-double-fire.md) |
 | TR-047 | [053](./053-multi-agent-worktree-shared-rebuild.md) |
+
+### Tempest 2026 (9 → 7 files)
+
+| Original | Amalgamated |
+|---|---|
+| T26-054 | [054](./054-platform-audio-fire-tv.md) |
+| T26-055 | [055](./055-gyroscope-permission-module-level.md) |
+| T26-056 | [056](./056-socketio-relay-playerid-overwrite.md) |
+| T26-057 | [057](./057-threejs-per-frame-allocation-audit.md) |
+| T26-058 | [058](./058-git-lfs-docker-audio.md) |
+| T26-059 | [059](./059-platform-audio-lifecycle-races.md) |
