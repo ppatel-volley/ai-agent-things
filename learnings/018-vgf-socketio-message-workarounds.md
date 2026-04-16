@@ -9,6 +9,8 @@
 VGF's `socket.on("message")` handler can be lost after disconnect/reconnect cycles, especially with React 18 StrictMode. The `onAny` workaround must be applied to ALL VGF clients, not just the display. The `onAny` callback signature is `(eventName, ...data)`, not `(...data)` — the first argument is the event name string, not the payload.
 
 > **VGF 4.9.1+ note:** Ack callback forwarding was fixed in v4.9.1 (`fix: forward ack callback in SocketIOConnection.onMessage`). The core `removeAllListeners` issue described here may also be resolved in newer VGF versions — **verify against your installed version before applying the `onAny` workaround.** If the workaround is no longer needed, remove it to avoid the maintenance burden.
+>
+> **VGF 4.13.0 update (2026-04-15, discworld-trivia E2E):** Confirmed that VGF 4.13.0 still calls `removeAllListeners()` in `disconnect()` (client.js line 370). The `onAny` workaround is still needed. However, **the workaround alone does not fully fix display state broadcast reliability** — E2E tests show the display can still miss state updates even with `onAny` applied. Combining the workaround with **atomic reducers** (batching multiple state changes into a single dispatch, e.g. `INIT_GAME` instead of separate `SET_CONTROLLER_CONNECTED` + `SET_QUESTION` + `SET_NEXT_PHASE`) reduces desync but does not eliminate it. The hello-weekend game template was missing the workaround entirely — it has now been added to both `VGFDisplayProvider` and `VGFControllerProvider`. This is a framework-level issue that needs a fix in `@volley/vgf` itself (the `disconnect()` method should not wipe listeners that the framework registered).
 
 ## Details
 

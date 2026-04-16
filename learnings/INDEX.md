@@ -19,7 +19,7 @@
 | State management / reducers | [009](./009-reducer-purity.md), [010](./010-dispatch-name-mismatch.md), [011](./011-backwards-compatible-module-replacement.md), [050](./050-dispatch-vs-dispatchThunk.md) |
 | Wallet / currency / chips | [012](./012-wallet-floor-of-zero.md) |
 | JavaScript operators | [013](./013-nullish-coalescing-precedence.md) |
-| VGF client setup | [014](./014-vgf-transport-sessions-setup.md) |
+| VGF client setup | [014](./014-vgf-transport-sessions-setup.md), [060](./060-vgf-protohub-session-creation.md) |
 | VGF phases / transitions | [015](./015-vgf-phase-callback-contexts.md), [016](./016-vgf-endif-cascade-limitations.md), [019](./019-vgf-480-phase-transitions.md), [047](./047-vgf-rfc-predictable-state-processing.md), [048](./048-bot-auto-actions-in-onbegin.md) |
 | VGF timers / schedulers | [017](./017-vgf-devscheduler-patterns.md), [032](./032-timer-management-patterns.md) |
 | VGF Socket.IO issues | [018](./018-vgf-socketio-message-workarounds.md) |
@@ -63,6 +63,9 @@
 | VGF dispatch (reducer vs thunk) | [010](./010-dispatch-name-mismatch.md), [050](./050-dispatch-vs-dispatchThunk.md) |
 | Module replacement / migration | [011](./011-backwards-compatible-module-replacement.md) |
 | Game economy / rewards | [012](./012-wallet-floor-of-zero.md), [040](./040-retention-system-integration.md) |
+| ProtoHub / game launching | [060](./060-vgf-protohub-session-creation.md) |
+| Voice input / TV feedback loop | [061](./061-voice-tv-audio-feedback-loop.md) |
+| VGF session management | [014](./014-vgf-transport-sessions-setup.md), [020](./020-vgf-dev-session-lifecycle.md), [060](./060-vgf-protohub-session-creation.md) |
 
 ---
 
@@ -112,6 +115,7 @@
 | [047](./047-vgf-rfc-predictable-state-processing.md) | RFC — Predictable State Processing | Critical | WP-020 |
 | [048](./048-bot-auto-actions-in-onbegin.md) | Bot Auto-Actions in onBegin | High | WP-022 |
 | [049](./049-vgf-project-scaffolding.md) | Project Scaffolding (0-to-1) | Critical | TR-043 |
+| [060](./060-vgf-protohub-session-creation.md) | ProtoHub Session Auto-Creation | Critical | discworld-trivia |
 
 ### Three.js & Shaders
 
@@ -149,6 +153,7 @@
 | [030](./030-browser-to-deepgram-audio.md) | Browser-to-Deepgram Audio Streaming | Critical | EM-006, EM-007 |
 | [031](./031-voice-parse-and-routing.md) | Voice Intents Need Parsing AND Routing | Critical | WP-012 |
 | [059](./059-platform-audio-lifecycle-races.md) | PlatformAudio Lifecycle Races — Generation Counter, Listener Stacking, Seek Reset | Critical | Tempest 2026 |
+| [061](./061-voice-tv-audio-feedback-loop.md) | Voice Input TV Audio Feedback Loop — Auto-Stop After Answer | Critical | discworld-trivia |
 
 ### Timer Management
 
